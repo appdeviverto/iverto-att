@@ -46,9 +46,14 @@ function meOf(session: Session): Me {
 const OVERRIDE_KEY = 'iverto-tenant-override';
 export const tenantOverride = () => sessionStorage.getItem(OVERRIDE_KEY);
 
+/** Web sign-in needs a TOTP-verified (aal2) session: `enroll` = no authenticator yet, `challenge` = enter a code. */
+export type MfaState = 'ok' | 'challenge' | 'enroll';
+
 interface AuthState {
   session: Session | null | undefined; // undefined = still loading
   me: Me | null;
+  /** undefined while it is being worked out for the current session. */
+  mfa: MfaState | undefined;
   override: string | null;
   suspended: boolean;
   setOverride: (tenantId: string | null) => void;
@@ -61,6 +66,14 @@ export function AuthProvider({ children, onSignOut }: { children: ReactNode; onS
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [override, setOverrideState] = useState(tenantOverride);
   const [suspended, setSuspended] = useState(false);
+  const [mfa, setMfa] = useState<{ token: string; state: MfaState } | null>(null);
+
+  useEffect(() => {
+    if (!session) return;
+    const token = session.access_token;
+    void supabase.auth.mfa.getAuthenticatorAssuranceLevel().then(({ data }) =>
+      setMfa({ token, state: data?.currentLevel === 'aal2' ? 'ok' : data?.nextLevel === 'aal2' ? 'challenge' : 'enroll' }));
+  }, [session]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -70,7 +83,7 @@ export function AuthProvider({ children, onSignOut }: { children: ReactNode; onS
       const code = (e as CustomEvent<string>).detail;
       if (code === 'UNAUTHORIZED') void supabase.auth.signOut();
       if (code === 'TENANT_SUSPENDED') setSuspended(true);
-      if (code === 'PASSWORD_CHANGE_REQUIRED') void supabase.auth.refreshSession();
+      if (code === 'PASSWORD_CHANGE_REQUIRED' || code === 'MFA_REQUIRED') void supabase.auth.refreshSession();
     };
     window.addEventListener('iverto:auth', onProblem);
     return () => {
@@ -82,6 +95,7 @@ export function AuthProvider({ children, onSignOut }: { children: ReactNode; onS
   const value: AuthState = {
     session,
     me: session ? meOf(session) : null,
+    mfa: session && mfa?.token === session.access_token ? mfa.state : undefined,
     override,
     suspended,
     setOverride: (id) => {

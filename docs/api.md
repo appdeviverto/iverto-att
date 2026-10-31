@@ -56,6 +56,7 @@ All errors thrown by the application follow the standardized RFC-compliant error
 | `403` | `FORBIDDEN` | Caller lacks the role or permission required for the operation. |
 | `403` | `TENANT_SUSPENDED`| The tenant is deactivated. User login blocked until reactivation. |
 | `403` | `PASSWORD_CHANGE_REQUIRED` | Initial temporary password must be replaced via `/v1/auth/password`. |
+| `403` | `MFA_REQUIRED` | The session has not passed a two-factor (TOTP) check. Every web route needs an `aal2` Supabase session; only `/v1/mobile/*`, `/v1/auth/*`, `GET /v1/org`, `GET /v1/departments` and `GET /v1/attendance/overview` accept password-only sessions. |
 | `404` | `NOT_FOUND` | Requested entity does not exist. |
 | `409` | `DUPLICATE` / `CONFLICT` | Unique key collision (e.g. employee code, tenant slug). |
 | `409` | `OVERLAP` | Date range conflict with an existing schedule or leave record. |
@@ -327,6 +328,21 @@ POST /v1/users/:id/reactivate
 POST /v1/users/:id/reset-password
 ```
 > **Access Control**: `ADMIN`, `HR`. Generates a new temporary password.
+
+### 3.8 Reset Two-Factor
+```http
+POST /v1/users/:id/reset-mfa
+```
+> **Access Control**: `ADMIN`, `HR`. Deletes the user's authenticator factors (lost phone); they enrol a new one at their next web sign-in. Response `{ "userId": "…", "factorsRemoved": 1 }`.
+
+### 3.9 Forgot / Reset Password (public)
+```http
+POST /v1/auth/forgot-password   { "email": "user@company.com" }
+POST /v1/auth/reset-password    { "token": "<from the e-mailed link>", "newPassword": "…" }
+```
+> **Access Control**: Public, 10 requests/minute per IP. `forgot-password` always answers `{ "ok": true }` and e-mails a one-time link (Resend; expires in an hour) to `WEB_APP_URL/reset-password?token=…` when an active account exists. `reset-password` spends the token, sets the password (clearing `mustChangePassword`) and signs the user out everywhere; a bad or used token → `400 INVALID_RESET_LINK`.
+
+Two-factor itself is Supabase Auth MFA (TOTP) driven from the web client: `mfa.enroll` → QR, `mfa.challengeAndVerify` → `aal2` session.
 
 ---
 
@@ -964,9 +980,17 @@ POST /v1/attendance/corrections
   "date": "2026-03-28",
   "in": "09:00",
   "out": "18:00",
-  "reason": "Biometric terminal failed to read face at checkout"
+  "reason": "Biometric terminal failed to read face at checkout",
+  "fieldVisitId": "fv-31"
 }
 ```
+`fieldVisitId` (optional) attaches one of that employee's field visits as proof (`400 BAD_PROOF` otherwise). Listed corrections carry `fieldVisit` (`{ id, takenAt, lat, lng, accuracy, isMockLocation, note, photoUrl }` or `null`).
+
+### 11.2a Field Visits
+```http
+GET /v1/field-visits?employeeId=&date=YYYY-MM-DD&cursor=&limit=50
+```
+> **Access Control**: Any user, scoped like the employee list (an `EMPLOYEE` sees only their own). Geotagged selfies taken in the mobile app (`POST /v1/mobile/field-visits`), newest first, each with a 1-hour `photoUrl`. They never count as punches.
 
 ---
 

@@ -3,6 +3,7 @@ import { randomInt } from 'crypto';
 import { AuditableActionService } from '../audit/audit.service';
 import { AuditActor, AuthUser, Role } from '../auth/auth.types';
 import { AppError } from '../common/errors';
+import { escapeHtml, sendMail } from '../common/mail';
 import { PrismaService } from '../common/prisma.service';
 import { runAsSystem } from '../common/rls';
 import { SupabaseService } from '../common/supabase.service';
@@ -167,6 +168,69 @@ export class UsersService {
       run: (tx) => tx.userProfile.update({ where: { userId }, data: { mustChangePassword: true } }),
     });
     return { userId, temporaryPassword: password };
+  }
+
+  /** HR/Admin clears a lost authenticator; the user sets up a new one on next web sign-in. */
+  async resetMfa(tenantId: string, userId: string, actor: AuditActor) {
+    await this.get(tenantId, userId);
+    const removed = await this.supabase.resetMfa(userId);
+    await this.audit.run({
+      action: 'USER_MFA_RESET',
+      targetType: 'UserProfile',
+      targetId: userId,
+      actor,
+      tenantId,
+      payloadFrom: () => ({ factorsRemoved: removed }),
+      run: async () => undefined,
+    });
+    return { userId, factorsRemoved: removed };
+  }
+
+  /**
+   * Forgot password: e-mails a one-time link. Always answers the same way and
+   * sends in the background, so the response never says whether the email exists.
+   */
+  requestPasswordReset(rawEmail: string) {
+    const email = rawEmail.trim().toLowerCase();
+    void (async () => {
+      const profile = await runAsSystem(() => this.prisma.userProfile.findFirst({ where: { email, status: 'ACTIVE' } }));
+      if (!profile) return;
+      const token = await this.supabase.recoveryToken(email);
+      const base = (process.env.WEB_APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+      const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+      await sendMail(
+        email,
+        'Reset your Iverto Attendance password',
+        `<p>Hi ${escapeHtml(profile.displayName)},</p>
+<p>Someone asked to reset the password for your Iverto Attendance account. If it was you, set a new one here:</p>
+<p><a href="${link}">Reset my password</a></p>
+<p>The link works once and expires in an hour. If you didn’t ask for this, ignore this e-mail; your password stays as it is.</p>`,
+      );
+    })().catch((err) => this.logger.error(`Password reset e-mail failed: ${(err as Error).message}`));
+    return { ok: true };
+  }
+
+  /** Completes the e-mailed reset. Signs out every session; 2FA still applies at the next web sign-in. */
+  async resetPasswordWithToken(tokenHash: string, newPassword: string) {
+    const userId = await this.supabase.consumeRecoveryToken(tokenHash);
+    const profile = userId ? await runAsSystem(() => this.prisma.userProfile.findUnique({ where: { userId } })) : null;
+    if (!profile || profile.status !== 'ACTIVE') throw new AppError(400, 'INVALID_RESET_LINK', 'This reset link is invalid or has expired. Ask for a new one.');
+    try {
+      await this.supabase.updateUser(profile.userId, { password: newPassword, app_metadata: this.claims(profile, false) });
+    } catch (err) {
+      throw new AppError(400, 'WEAK_PASSWORD', `${(err as Error).message}. Ask for a new reset link and try a stronger password.`);
+    }
+    await runAsSystem(() =>
+      this.audit.run({
+        action: 'USER_PASSWORD_RESET_BY_EMAIL',
+        targetType: 'UserProfile',
+        targetId: profile.userId,
+        actor: { type: 'user', userId: profile.userId },
+        tenantId: profile.tenantId,
+        run: (tx) => tx.userProfile.update({ where: { userId: profile.userId }, data: { mustChangePassword: false } }),
+      }),
+    );
+    return { ok: true };
   }
 
   /** Ban keeps the email reserved; exit (removeLogin) frees it (§13.2). */

@@ -105,6 +105,8 @@ export class RecomputeService {
         }),
       ]);
 
+      // Fully remote employees work remote every day, no request needed.
+      const isRemote = Boolean(remote) || employee.mobilePunch === 'FULL_REMOTE';
       let engineLeave: EngineLeave | null = null;
       if (leave) {
         const half = ymdOf(leave.startDate) === date ? leave.startHalf : ymdOf(leave.endDate) === date ? leave.endHalf : null;
@@ -115,7 +117,7 @@ export class RecomputeService {
         day: engineDayOf(day),
         punches: punches.map((p) => ({ at: p.punchedAt, direction: p.direction as any, source: p.source })),
         leave: engineLeave,
-        remote: Boolean(remote),
+        remote: isRemote,
         policy: day.policy as unknown as EnginePolicy,
         now: new Date(),
       });
@@ -142,7 +144,7 @@ export class RecomputeService {
           leavePortion: engineLeave?.portion ?? 0,
           leaveHalf: engineLeave?.half ?? null,
           leaveTypeId: engineLeave?.leaveTypeId ?? null,
-          remote: Boolean(remote),
+          remote: isRemote,
           corrected: r.corrected,
           finalizedAt: day.finalizedAt ?? (r.open ? null : new Date()),
           computedAt: new Date(),

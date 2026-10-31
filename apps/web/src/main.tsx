@@ -7,7 +7,7 @@ import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } fr
 import { Layout, PlatformLayout } from './components/Layout';
 import { CACHE_MAX_AGE, clearCache, persister, queryClient } from './lib/api';
 import { AuthProvider, isManager, useAuth, useMe } from './lib/auth';
-import { Login, SetPassword, Suspended } from './pages/Auth';
+import { ForgotPassword, Login, MfaChallenge, MfaSetup, ResetPassword, SetPassword, Suspended } from './pages/Auth';
 import { Corrections, Daily, Logs, Overview } from './pages/Attendance';
 import { EmployeeDetail, Employees } from './pages/Employees';
 import { Leaderboard } from './pages/Leaderboard';
@@ -22,11 +22,15 @@ import { Enrollment, Terminals } from './pages/Terminals';
 
 /** Signed in → the persisted cache for *this* user (and tenant, for platform admins) is restored. */
 function RequireAuth() {
-  const { session, me, override, suspended } = useAuth();
+  const { session, me, mfa, override, suspended } = useAuth();
   const { pathname } = useLocation();
   if (session === undefined) return <CenteredSpinner />;
   if (!session || !me) return <Navigate to="/login" replace />;
   if (me.mustChangePassword) return pathname === '/set-password' ? <SetPassword /> : <Navigate to="/set-password" replace />;
+  // 2FA comes after the temporary password is replaced; existing accounts enrol on their next sign-in.
+  if (mfa === undefined) return <CenteredSpinner />;
+  if (mfa === 'enroll') return <MfaSetup />;
+  if (mfa === 'challenge') return <MfaChallenge />;
   if (suspended) return <Suspended />;
   if (me.isSuperAdmin && !override && !pathname.startsWith('/platform')) return <Navigate to="/platform" replace />;
   return (
@@ -43,6 +47,8 @@ function Home() {
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/reset-password', element: <ResetPassword /> },
   {
     element: <RequireAuth />,
     children: [

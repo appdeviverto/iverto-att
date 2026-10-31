@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Module, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import { actorOf, AllowPendingPassword, AuthUser, CurrentUser, ROLES, Role, Roles } from '../auth/auth.types';
+import { actorOf, AllowPendingPassword, AuthUser, CurrentUser, Public, ROLES, Role, Roles, SkipMfa } from '../auth/auth.types';
 import { AppError } from '../common/errors';
 import { UsersService } from './users.service';
 
@@ -21,6 +21,15 @@ export class UpdateUserDto {
 
 export class ChangePasswordDto {
   @IsString() currentPassword: string;
+  @IsString() @MinLength(10) @MaxLength(128) newPassword: string;
+}
+
+export class ForgotPasswordDto {
+  @IsEmail() @MaxLength(254) email: string;
+}
+
+export class ResetPasswordDto {
+  @IsString() @MinLength(10) @MaxLength(200) token: string;
   @IsString() @MinLength(10) @MaxLength(128) newPassword: string;
 }
 
@@ -74,6 +83,12 @@ export class UsersController {
   resetPassword(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.users.resetPassword(user.tenantId, id, actorOf(user));
   }
+
+  @Post(':id/reset-mfa')
+  @Roles('ADMIN', 'HR')
+  resetMfa(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.users.resetMfa(user.tenantId, id, actorOf(user));
+  }
 }
 
 @ApiTags('auth')
@@ -81,10 +96,24 @@ export class UsersController {
 export class AuthController {
   constructor(private readonly users: UsersService) {}
 
+  // First login changes the temporary password before 2FA is set up.
   @Post('password')
   @AllowPendingPassword()
+  @SkipMfa()
   changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
     return this.users.changeOwnPassword(user, dto.currentPassword, dto.newPassword);
+  }
+
+  @Post('forgot-password')
+  @Public()
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.users.requestPasswordReset(dto.email);
+  }
+
+  @Post('reset-password')
+  @Public()
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.users.resetPasswordWithToken(dto.token, dto.newPassword);
   }
 }
 

@@ -4,14 +4,14 @@ import * as jose from 'jose';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { runAsSystem } from '../common/rls';
-import { ALLOW_PENDING_PASSWORD, AuthUser, IS_PUBLIC, ROLES, ROLES_KEY, Role } from './auth.types';
+import { ALLOW_PENDING_PASSWORD, AuthUser, IS_PUBLIC, ROLES, ROLES_KEY, Role, SKIP_MFA } from './auth.types';
 
 const TENANT_STATUS_TTL_MS = 60_000;
 
 /**
  * Verifies Supabase access tokens against the project JWKS (asymmetric keys
  * only — the hostel HS256 fallback, and its secret-leaking log line, are gone),
- * then enforces tenant suspension, forced password change and roles.
+ * then enforces tenant suspension, forced password change, web 2FA and roles.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -71,6 +71,11 @@ export class JwtAuthGuard implements CanActivate {
       throw new AppError(403, 'PASSWORD_CHANGE_REQUIRED', 'Set a new password before continuing');
     }
 
+    // Every web route needs a TOTP-verified session; accounts without a factor enrol on next sign-in.
+    if (user.aal !== 'aal2' && !meta<boolean>(SKIP_MFA)) {
+      throw new AppError(403, 'MFA_REQUIRED', 'Verify with your authenticator app to continue');
+    }
+
     const required = meta<Role[]>(ROLES_KEY);
     if (required?.includes('PLATFORM_ADMIN')) {
       if (!user.isSuperAdmin) throw new AppError(403, 'FORBIDDEN', 'Platform administrators only');
@@ -103,6 +108,7 @@ export class JwtAuthGuard implements CanActivate {
       siteIds: Array.isArray(app.site_ids) ? app.site_ids : [],
       isSuperAdmin,
       mustChangePassword: app.must_change_password === true,
+      aal: (payload.aal as string) ?? 'aal1',
     };
   }
 

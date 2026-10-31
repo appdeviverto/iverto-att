@@ -8,7 +8,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { DayDrawer } from '../components/DayDrawer';
 import { ImportEmployees } from '../components/ImportEmployees';
 import { clean, DepartmentSelect, EmployeePicker, Fields, FormModal, Panel, Pick, SiteSelect, useForm, type FieldSpec } from '../components/ui';
-import { patch, post, useAction, useApi, useDepartments, useShifts, useSites, type Page } from '../lib/api';
+import { patch, post, REFERENCE, useAction, useApi, useDepartments, useShifts, useSites, type Page } from '../lib/api';
 import { isHr, useMe } from '../lib/auth';
 import { addDays, hm, REQUEST_STATUS, ROLE_LABEL, ROLES, StatusBadge, today, WEEKDAYS } from '../lib/format';
 import type { Day } from '../lib/live';
@@ -35,7 +35,7 @@ function useEmployeeFields(creating: boolean): FieldSpec[] {
     { key: 'phone', label: 'Phone' },
     { key: 'employmentType', label: 'Employment type', type: 'select', options: ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'].map((v) => ({ value: v, label: v.replace('_', ' ').toLowerCase() })) },
     { key: 'joinedOn', label: 'Joined on', type: 'date', required: true },
-    { key: 'mobilePunch', label: 'Mobile punching', type: 'select', options: [{ value: 'NEVER', label: 'Never' }, { value: 'REMOTE_DAYS', label: 'On approved remote days' }, { value: 'ALWAYS', label: 'Always (field staff)' }] },
+    { key: 'mobilePunch', label: 'Mobile punching', type: 'select', options: [{ value: 'NEVER', label: 'Never' }, { value: 'REMOTE_DAYS', label: 'On approved remote days' }, { value: 'ALWAYS', label: 'Always (field staff)' }, { value: 'FULL_REMOTE', label: 'Fully remote (every working day counts as remote)' }] },
     ...(creating ? [{ key: 'shiftId', label: 'Starting shift', type: 'select' as const, placeholder: 'Tenant default shift', options: shifts.filter((s) => s.active).map((s) => ({ value: s.id, label: `${s.name} (${s.startTime}–${s.endTime})` })) }] : []),
     { key: 'biometricConsent', label: 'Biometric consent recorded', type: 'bool', hint: 'Required before enrolling a face (DPDP Act / GDPR)' },
   ];
@@ -70,7 +70,9 @@ export function Employees() {
   const [siteId, setSite] = useState('');
   const [departmentId, setDept] = useState('');
   const [status, setStatus] = useState('ACTIVE');
+  const [kind, setKind] = useState('ALL');
   const [page, setPage] = useState(1);
+  const internsEnabled = Boolean(useApi<{ settings: Record<string, any> }>('/org', undefined, REFERENCE).data?.settings.internsEnabled);
   const [modal, setModal] = useState<'add' | 'import' | null>(null);
   // ?add=1 / ?import=1 open a dialog (the command palette links here).
   const [params, setParams] = useSearchParams();
@@ -79,7 +81,8 @@ export function Employees() {
     if (m && isHr(me)) { setModal(m); setParams({}, { replace: true }); }
   }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
   const size = 50;
-  const { data, isLoading } = useApi<Page<Employee>>('/employees', { q, siteId, departmentId, status, page, size });
+  const intern = internsEnabled && kind !== 'ALL' ? kind === 'INTERN' : undefined;
+  const { data, isLoading } = useApi<Page<Employee>>('/employees', { q, siteId, departmentId, status, intern, page, size });
 
   return (
     <div className="space-y-6">
@@ -94,6 +97,7 @@ export function Employees() {
             <SiteSelect value={siteId} onChange={(v) => { setSite(v); setPage(1); }} />
             <DepartmentSelect value={departmentId} onChange={(v) => { setDept(v); setPage(1); }} />
             <PillTabs label="Status" value={status} onChange={(v) => { setStatus(v); setPage(1); }} tabs={[{ value: 'ACTIVE', label: 'Active' }, { value: 'EXITED', label: 'Exited' }]} />
+            {internsEnabled && <PillTabs label="People" value={kind} onChange={(v) => { setKind(v); setPage(1); }} tabs={[{ value: 'ALL', label: 'Everyone' }, { value: 'STAFF', label: 'Employees' }, { value: 'INTERN', label: 'Interns' }]} />}
           </div>
         } />
       <Panel>
@@ -101,7 +105,7 @@ export function Employees() {
           empty={<EmptyState title={q ? 'No one matches that search' : 'No employees yet'} description={isHr(me) && !q ? 'Add people one by one or import a CSV.' : undefined} />}
           columns={[
             { key: 'name', header: 'Employee', render: (r) => <div><div className="font-semibold text-fg">{r.fullName}</div><div className="font-mono text-xs text-fg-subtle">{r.employeeCode}</div></div> },
-            { key: 'designation', header: 'Role', render: (r) => r.designation ?? '—' },
+            { key: 'designation', header: 'Role', render: (r) => <span className="flex items-center gap-1.5">{r.designation ?? '—'}{internsEnabled && r.employmentType === 'INTERN' && <Badge tone="info">Intern</Badge>}</span> },
             { key: 'dept', header: 'Department', render: (r) => r.department?.name ?? '—' },
             { key: 'site', header: 'Site', render: (r) => r.site?.name ?? '—' },
             { key: 'manager', header: 'Manager', render: (r) => r.manager?.fullName ?? '—' },

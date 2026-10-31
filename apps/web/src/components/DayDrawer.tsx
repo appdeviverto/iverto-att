@@ -1,9 +1,9 @@
-import { Badge, Button, Callout, CenteredSpinner, DateInput, DescriptionList, Modal, Textarea } from '@iverto-org/core-ui';
+import { Badge, Button, Callout, CenteredSpinner, DateInput, DescriptionList, Modal, Select, Textarea } from '@iverto-org/core-ui';
 import { ClipboardEdit } from 'lucide-react';
 import { useState } from 'react';
 import { post, useAction, useApi } from '../lib/api';
 import { isHr, useMe } from '../lib/auth';
-import { clock, hm, LIVE_STATE, StatusBadge } from '../lib/format';
+import { clock, dateTime, hm, LIVE_STATE, StatusBadge } from '../lib/format';
 import type { Day, Punch } from '../lib/live';
 import { EmployeePicker, FormModal, useForm } from './ui';
 
@@ -106,9 +106,11 @@ export function DayDrawer({ dayId, onClose }: { dayId: string | null; onClose: (
 /** Missed-punch fix (§1): approval adds CORRECTION punches; nothing is overwritten (D5). */
 export function CorrectionModal({ open, onClose, employeeId, date }: { open: boolean; onClose: () => void; employeeId?: string; date?: string }) {
   const me = useMe();
-  const [f, set] = useForm({ employeeId: employeeId ?? '', date: date ?? '', in: '', out: '', reason: '' });
+  const [f, set] = useForm({ employeeId: employeeId ?? '', date: date ?? '', in: '', out: '', reason: '', fieldVisitId: '' });
+  const who = f.employeeId || me.employeeId;
+  const visits = useApi<{ data: FieldVisit[] }>('/field-visits', { employeeId: who, date: f.date }, { enabled: Boolean(who && f.date) }).data?.data ?? [];
   const save = useAction(
-    () => post('/attendance/corrections', { employeeId: f.employeeId || undefined, date: f.date, in: f.in || undefined, out: f.out || undefined, reason: f.reason }),
+    () => post('/attendance/corrections', { employeeId: f.employeeId || undefined, date: f.date, in: f.in || undefined, out: f.out || undefined, reason: f.reason, fieldVisitId: f.fieldVisitId || undefined }),
     { invalidate: ['/attendance'], success: isHr(me) ? 'Correction filed' : 'Correction sent for approval', onSuccess: onClose },
   );
   return (
@@ -121,6 +123,36 @@ export function CorrectionModal({ open, onClose, employeeId, date }: { open: boo
         <DateInput mode="time" label="Out" hint="Earlier than in = next morning" value={f.out} onChange={(e) => set('out')(e.target.value)} />
       </div>
       <Textarea label="Reason" required minLength={3} maxLength={500} value={f.reason} onChange={(e) => set('reason')(e.target.value)} />
+      {visits.length > 0 && (
+        <Select label="Proof (field visit)" hint="A geotagged selfie taken in the mobile app that day" placeholder="No proof attached" value={f.fieldVisitId} onChange={(e) => set('fieldVisitId')(e.target.value)}
+          options={visits.map((v) => ({ value: v.id, label: `${v.local.slice(11)}${v.note ? ` · ${v.note}` : ''}` }))} />
+      )}
     </FormModal>
+  );
+}
+
+/** A field visit: geotagged, server-timestamped selfie from the mobile app, attached to corrections as proof. */
+export interface FieldVisit {
+  id: string; takenAt: string; local: string; lat: number; lng: number; accuracy: number; isMockLocation: boolean | null; note: string | null; photoUrl: string;
+}
+
+/** The photo beside a map of where it was taken. */
+export function FieldVisitProof({ visit }: { visit: Omit<FieldVisit, 'local'> }) {
+  const { lat, lng } = visit;
+  const where = `${lat.toFixed(5)}, ${lng.toFixed(5)} ±${Math.round(visit.accuracy)} m`;
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <img src={visit.photoUrl} alt="Field visit selfie" className="aspect-[3/4] w-full rounded-lg object-cover" />
+      <div className="space-y-3">
+        <iframe title="Where the photo was taken" className="aspect-square w-full rounded-lg border border-border"
+          src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.004},${lat - 0.004},${lng + 0.004},${lat + 0.004}&layer=mapnik&marker=${lat},${lng}`} />
+        <DescriptionList columns={1} items={[
+          { term: 'Taken', value: dateTime(visit.takenAt) },
+          { term: 'Location', value: <a className="underline" href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer">{where}</a> },
+          { term: 'GPS', value: visit.isMockLocation ? <Badge tone="danger">Mock location reported</Badge> : 'Device location' },
+          ...(visit.note ? [{ term: 'Note', value: visit.note }] : []),
+        ]} />
+      </div>
+    </div>
   );
 }

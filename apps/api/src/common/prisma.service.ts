@@ -80,6 +80,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     };
     (extended as any).onModuleInit = async () => {
       await PrismaClient.prototype.$connect.call(base);
+      // A role that bypasses RLS silently voids every tenant policy (003); refuse to serve on one.
+      const { rows } = await pool.query('SELECT current_user AS role, rolsuper OR rolbypassrls AS bypass FROM pg_roles WHERE rolname = current_user');
+      if (rows[0]?.bypass) throw new Error(`DATABASE_URL connects as "${rows[0].role}", which bypasses row-level security; use app_user (see prisma/post-init/005-app-role.sql)`);
       this.logger.log('Prisma connected');
     };
     (extended as any).onModuleDestroy = async () => {

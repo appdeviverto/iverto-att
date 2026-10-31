@@ -10,6 +10,7 @@ import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/errors';
 import { redisOptions } from './common/redis.service';
 import { EmployeesModule } from './employees/employees';
+import { FieldVisitsModule } from './field-visits/field-visits';
 import { HealthModule } from './health';
 import { JobsModule } from './jobs/jobs';
 import { LeaveModule } from './leave/leave';
@@ -47,6 +48,7 @@ import { UsersModule } from './users/users.controller';
     AttendanceModule,
     LeaveModule,
     RemoteModule,
+    FieldVisitsModule,
     ReportsModule,
     MobileModule,
     JobsModule,

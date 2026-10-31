@@ -178,7 +178,7 @@ const employees: Source<EmpRef> = {
     { key: 'joinedMonth', label: 'Joined (month)', type: 'text', get: (e) => ymdOf(e.joinedOn).slice(0, 7) },
     { key: 'exitOn', label: 'Exit on', type: 'date', get: (e) => (e.exitOn ? ymdOf(e.exitOn) : null) },
     { key: 'status', label: 'Status', type: 'enum', options: opts({ ACTIVE: 'Active', EXITED: 'Exited' }), get: (e) => e.status },
-    { key: 'mobilePunch', label: 'Mobile punch', type: 'enum', options: opts({ NEVER: 'Never', REMOTE_DAYS: 'Remote days', ALWAYS: 'Always' }), get: (e) => e.mobilePunch },
+    { key: 'mobilePunch', label: 'Mobile punch', type: 'enum', options: opts({ NEVER: 'Never', REMOTE_DAYS: 'Remote days', ALWAYS: 'Always', FULL_REMOTE: 'Fully remote' }), get: (e) => e.mobilePunch },
     { key: 'biometricConsent', label: 'Biometric consent', type: 'bool', get: (e) => Boolean(e.biometricConsentAt) },
   ],
 };

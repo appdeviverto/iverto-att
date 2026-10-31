@@ -48,6 +48,14 @@ export class PunchReviewQuery {
 
 const MAX_SELFIE_BYTES = 2 * 1024 * 1024;
 
+/** An in-app JPEG selfie (mobile punches, field visits): at most 2 MB, checked by magic bytes. */
+export function decodeSelfie(base64: string): Buffer {
+  const selfie = Buffer.from(base64, 'base64');
+  if (selfie.byteLength > MAX_SELFIE_BYTES) throw new AppError(413, 'FILE_TOO_LARGE', 'The selfie must be at most 2 MB');
+  if (selfie[0] !== 0xff || selfie[1] !== 0xd8) throw new AppError(400, 'FILE_TYPE_MISMATCH', 'The selfie must be a JPEG');
+  return selfie;
+}
+
 /** Remote work (§9): same approval path as leave, same no-overlap constraint, plus field/remote punches. */
 @Injectable()
 export class RemoteService {
@@ -145,7 +153,7 @@ export class RemoteService {
 
   /**
    * Remote/field check-in (§9). Server time is authoritative; allowed when the
-   * employee's mobile_punch is ALWAYS, or REMOTE_DAYS with approved remote work
+   * employee's mobile_punch is ALWAYS or FULL_REMOTE, or REMOTE_DAYS with approved remote work
    * today. Coordinates and a selfie are stored; the punch counts at once and
    * waits in PENDING review — a rejection takes it out of the day.
    */
@@ -153,7 +161,7 @@ export class RemoteService {
     const employee = await this.scope.self(user);
     if (employee.status !== 'ACTIVE') throw new AppError(403, 'EMPLOYEE_EXITED', 'Employee has exited');
     const today = localYmd(new Date(), employee.site.timezone);
-    let allowed = employee.mobilePunch === 'ALWAYS';
+    let allowed = employee.mobilePunch === 'ALWAYS' || employee.mobilePunch === 'FULL_REMOTE';
     if (!allowed && employee.mobilePunch === 'REMOTE_DAYS') {
       allowed = Boolean(
         await this.prisma.remoteWorkRequest.findFirst({
@@ -164,9 +172,7 @@ export class RemoteService {
     if (!allowed) {
       throw new AppError(403, 'MOBILE_PUNCH_NOT_ALLOWED', employee.mobilePunch === 'NEVER' ? 'Mobile punching is not enabled for you' : 'You have no approved remote work today');
     }
-    const selfie = Buffer.from(dto.selfieBase64, 'base64');
-    if (selfie.byteLength > MAX_SELFIE_BYTES) throw new AppError(413, 'FILE_TOO_LARGE', 'The selfie must be at most 2 MB');
-    if (selfie[0] !== 0xff || selfie[1] !== 0xd8) throw new AppError(400, 'FILE_TYPE_MISMATCH', 'The selfie must be a JPEG');
+    const selfie = decodeSelfie(dto.selfieBase64);
     // Upload first so a punch never exists without its selfie; a failed insert only leaves an orphan blob.
     const photoKey = `${employee.tenantId}/${employee.id}/${today}/${randomUUID()}.jpg`;
     await this.blobs.upload(photoKey, selfie, 'image/jpeg');
@@ -214,7 +220,7 @@ export class RemoteService {
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
     return {
-      data: page.map((p) => ({ ...presentPunch(p, p.employee!.site.timezone), selfieUrl: p.photoKey ? this.blobs.readUrl(p.photoKey) : null })),
+      data: await Promise.all(page.map(async (p) => ({ ...presentPunch(p, p.employee!.site.timezone), selfieUrl: p.photoKey ? await this.blobs.readUrl(p.photoKey) : null }))),
       nextCursor:
         rows.length > limit && last ? Buffer.from(JSON.stringify({ t: last.punchedAt.toISOString(), id: last.id })).toString('base64url') : null,
     };

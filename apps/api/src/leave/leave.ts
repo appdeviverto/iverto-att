@@ -113,6 +113,17 @@ export class LeaveService {
     private readonly notifications: NotificationsService,
   ) {}
 
+  /** Interns sit outside payroll: with the org's interns toggle on, they have no leave at all. */
+  async noLeave(employee: { tenantId: string; employmentType: string }) {
+    if (employee.employmentType !== 'INTERN') return false;
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: employee.tenantId }, select: { settings: true } });
+    return (tenant?.settings as Record<string, unknown> | undefined)?.internsEnabled === true;
+  }
+
+  private async assertHasLeave(employee: { tenantId: string; employmentType: string }) {
+    if (await this.noLeave(employee)) throw new AppError(400, 'NO_LEAVE_FOR_INTERNS', 'Interns do not have leave');
+  }
+
   presentRequest(r: LeaveRequest & Record<string, any>) {
     return { ...r, startDate: ymdOf(r.startDate), endDate: ymdOf(r.endDate), days: Number(r.days) };
   }
@@ -147,6 +158,7 @@ export class LeaveService {
   /** Everything the apply form needs to show before submitting. Throws only for impossible input. */
   async preview(user: AuthUser, dto: LeaveRequestDto) {
     const employee = !dto.employeeId || dto.employeeId === user.employeeId ? await this.scope.self(user) : await this.scope.assertEmployee(user, dto.employeeId);
+    await this.assertHasLeave(employee);
     const type = await this.prisma.leaveType.findFirst({ where: { id: dto.leaveTypeId, tenantId: user.tenantId } });
     if (!type || !type.active) throw new AppError(400, 'LEAVE_TYPE_UNAVAILABLE', 'This leave type is not available');
     const { startHalf, endHalf } = this.normaliseHalves(dto);
@@ -385,6 +397,7 @@ export class LeaveService {
     const employee = !employeeId || employeeId === user.employeeId ? await this.scope.self(user) : await this.scope.assertEmployee(user, employeeId);
     const site = await this.prisma.site.findUnique({ where: { id: employee.siteId } });
     const y = year ?? leaveYearOf(localYmd(new Date(), site?.timezone ?? 'UTC'));
+    if (await this.noLeave(employee)) return { employeeId: employee.id, leaveYear: y, period: leaveYearRange(y), balances: [] };
     const [types, ledger, pending] = await Promise.all([
       this.prisma.leaveType.findMany({ where: { tenantId: user.tenantId }, orderBy: { code: 'asc' } }),
       // periodKey splits CARRY_FORWARD into what came in (CF-IN) and what moved on at year end (CF-OUT).
@@ -429,7 +442,7 @@ export class LeaveService {
   }
 
   async adjust(user: AuthUser, dto: AdjustmentDto) {
-    await this.scope.assertEmployee(user, dto.employeeId);
+    await this.assertHasLeave(await this.scope.assertEmployee(user, dto.employeeId));
     await this.prisma.leaveType.findFirstOrThrow({ where: { id: dto.leaveTypeId, tenantId: user.tenantId } });
     return this.audit.run({
       action: 'LEAVE_ADJUSTED',
@@ -456,7 +469,7 @@ export class LeaveService {
 
   /** Comp-off (§8.2): a finalised off-day worked for ≥ half a day earns 0.5 or 1 day of COMP. */
   async compOff(user: AuthUser, dto: CompOffDto) {
-    await this.scope.assertEmployee(user, dto.employeeId);
+    await this.assertHasLeave(await this.scope.assertEmployee(user, dto.employeeId));
     const type = await this.prisma.leaveType.findFirst({ where: { tenantId: user.tenantId, code: 'COMP' } });
     if (!type) throw new AppError(400, 'NO_COMP_TYPE', 'Create a leave type with code COMP first');
     const day = await this.prisma.attendanceDay.findUnique({ where: { employeeId_workDate: { employeeId: dto.employeeId, workDate: dbDate(dto.date) } } });
@@ -501,7 +514,7 @@ export class LeaveService {
       const tenants = await this.prisma.tenant.findMany({ where: { status: 'ACTIVE' } });
       for (const t of tenants) {
         try {
-          await this.accrueTenant(t.id, ((t.settings as any)?.timezone as string) || 'Asia/Kolkata');
+          await this.accrueTenant(t.id, ((t.settings as any)?.timezone as string) || 'Asia/Kolkata', (t.settings as any)?.internsEnabled === true);
         } catch (err) {
           this.logger.error(`Accrual for tenant ${t.id} failed: ${(err as Error).message}`);
         }
@@ -509,13 +522,16 @@ export class LeaveService {
     });
   }
 
-  private async accrueTenant(tenantId: string, tz: string) {
+  private async accrueTenant(tenantId: string, tz: string, skipInterns: boolean) {
     const today = localYmd(new Date(), tz);
     const year = leaveYearOf(today);
     const { from: yearStart } = leaveYearRange(year);
     const [types, employees] = await Promise.all([
       this.prisma.leaveType.findMany({ where: { tenantId, active: true } }),
-      this.prisma.employee.findMany({ where: { tenantId, status: 'ACTIVE' }, select: { id: true, joinedOn: true } }),
+      this.prisma.employee.findMany({
+        where: { tenantId, status: 'ACTIVE', ...(skipInterns ? { employmentType: { not: 'INTERN' } } : {}) },
+        select: { id: true, joinedOn: true },
+      }),
     ]);
     // Close last year first, so this year's max-balance cap already sees what was carried in.
     await this.closeYear(tenantId, year - 1, types);

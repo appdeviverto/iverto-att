@@ -32,7 +32,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   const json = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     const err = new ApiError(res.status, json?.code ?? 'ERROR', json?.message ?? res.statusText, json?.details);
-    if (['UNAUTHORIZED', 'TENANT_SUSPENDED', 'PASSWORD_CHANGE_REQUIRED'].includes(err.code)) {
+    if (['UNAUTHORIZED', 'TENANT_SUSPENDED', 'PASSWORD_CHANGE_REQUIRED', 'MFA_REQUIRED'].includes(err.code)) {
       window.dispatchEvent(new CustomEvent('iverto:auth', { detail: err.code }));
     }
     throw err;

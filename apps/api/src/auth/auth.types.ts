@@ -14,6 +14,8 @@ export interface AuthUser {
   siteIds: string[];
   isSuperAdmin: boolean;
   mustChangePassword: boolean;
+  /** Supabase assurance level: 'aal2' once the session passed a TOTP challenge. */
+  aal?: string;
 }
 
 export interface AuditActor {
@@ -34,6 +36,10 @@ export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
 /** Reachable while the account still has to replace its temporary password. */
 export const ALLOW_PENDING_PASSWORD = 'allowPendingPassword';
 export const AllowPendingPassword = () => SetMetadata(ALLOW_PENDING_PASSWORD, true);
+
+/** Reachable with a password-only (aal1) session: the mobile app and first-login password change. 2FA is web-only. */
+export const SKIP_MFA = 'skipMfa';
+export const SkipMfa = () => SetMetadata(SKIP_MFA, true);
 
 export const CurrentUser = createParamDecorator(
   (_: unknown, ctx: ExecutionContext): AuthUser => ctx.switchToHttp().getRequest().user,

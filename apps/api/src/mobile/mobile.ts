@@ -22,7 +22,7 @@ import { AttendanceModule } from '../attendance/attendance.module';
 import { CorrectionsService, CreateCorrectionDto, RequestListQuery } from '../attendance/corrections';
 import { presentDay, presentPunch, statusCode } from '../attendance/present';
 import { RosterService } from '../attendance/roster.service';
-import { AllowPendingPassword, AuthUser, CurrentUser, Roles } from '../auth/auth.types';
+import { AllowPendingPassword, AuthUser, CurrentUser, Roles, SkipMfa } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
@@ -37,6 +37,7 @@ import { ScheduleModule, ScheduleService } from '../schedule/schedule';
 import { ChangePasswordDto, UsersModule } from '../users/users.controller';
 import { UsersService } from '../users/users.service';
 import { IdempotencyInterceptor } from './idempotency';
+import { FieldVisitDto, FieldVisitQuery, FieldVisitsModule, FieldVisitsService } from '../field-visits/field-visits';
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ export class MobileService {
       displayName: profile?.displayName ?? employee?.fullName ?? user.email,
       role: user.role,
       mustChangePassword: user.mustChangePassword,
-      organisation: { id: tenant?.id, name: settings.branding?.displayName ?? tenant?.name, logoUrl: settings.branding?.logoUrl ?? null, primaryColor: settings.branding?.primaryColor ?? null },
+      organisation: { id: tenant?.id, name: settings.branding?.displayName || tenant?.name, logoUrl: settings.branding?.logoUrl ?? null, primaryColor: settings.branding?.primaryColor ?? null },
       employee: employee
         ? {
             id: employee.id,
@@ -139,7 +140,8 @@ export class MobileService {
         canApprove: user.role !== 'EMPLOYEE',
         teamView: user.role !== 'EMPLOYEE',
         remoteWork: Boolean(employee),
-        leave: Boolean(employee),
+        leave: Boolean(employee) && !(employee!.employmentType === 'INTERN' && settings.internsEnabled === true),
+        fieldVisits: Boolean(employee),
       },
     };
   }
@@ -211,7 +213,7 @@ export class MobileService {
         : null,
       mobilePunch: {
         mode: employee.mobilePunch,
-        allowedNow: employee.mobilePunch === 'ALWAYS' || (employee.mobilePunch === 'REMOTE_DAYS' && Boolean(remote)),
+        allowedNow: ['ALWAYS', 'FULL_REMOTE'].includes(employee.mobilePunch) || (employee.mobilePunch === 'REMOTE_DAYS' && Boolean(remote)),
       },
     };
   }
@@ -333,6 +335,7 @@ export class MobileService {
 
 @ApiTags('mobile')
 @Controller('mobile')
+@SkipMfa()
 @UseInterceptors(IdempotencyInterceptor)
 export class MobileController {
   constructor(
@@ -342,6 +345,7 @@ export class MobileController {
     private readonly leave: LeaveService,
     private readonly corrections: CorrectionsService,
     private readonly remote: RemoteService,
+    private readonly fieldVisits: FieldVisitsService,
     private readonly live: LiveService,
     private readonly supabase: SupabaseService,
     private readonly prisma: PrismaService,
@@ -419,6 +423,17 @@ export class MobileController {
     return this.remote.mobilePunch(user, dto);
   }
 
+  /** Geotagged selfie kept as proof of off-site work; attach its id to a correction. Not a punch. */
+  @Post('field-visits')
+  fieldVisit(@CurrentUser() user: AuthUser, @Body() dto: FieldVisitDto) {
+    return this.fieldVisits.create(user, dto);
+  }
+
+  @Get('field-visits')
+  myFieldVisits(@CurrentUser() user: AuthUser, @Query() q: FieldVisitQuery) {
+    return this.fieldVisits.list(user, q, true);
+  }
+
   @Get('leave/balances')
   balances(@CurrentUser() user: AuthUser, @Query() q: YearQuery) {
     if (!user.employeeId) {
@@ -433,6 +448,8 @@ export class MobileController {
   async leaveTypes(@CurrentUser() user: AuthUser) {
     if (!user.employeeId) return [];
     const { balances } = await this.leave.balances(user, undefined);
+    // No balances = no active types, or an intern without leave: nothing to apply for either way.
+    if (!balances.length) return [];
     const types = await this.prisma.leaveType.findMany({ where: { tenantId: user.tenantId, active: true }, orderBy: { code: 'asc' } });
     return types.map((t) => ({
       id: t.id,
@@ -566,7 +583,7 @@ export class MobileController {
 }
 
 @Module({
-  imports: [UsersModule, LeaveModule, AttendanceModule, RemoteModule, ScheduleModule],
+  imports: [UsersModule, LeaveModule, AttendanceModule, RemoteModule, ScheduleModule, FieldVisitsModule],
   controllers: [MobileController],
   providers: [MobileService, IdempotencyInterceptor],
 })

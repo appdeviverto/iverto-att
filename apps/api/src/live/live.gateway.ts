@@ -41,7 +41,7 @@ export class LiveGateway implements OnGatewayConnection {
       socket.emit('error', { code: 'UNAUTHORIZED' });
       return socket.disconnect(true);
     }
-    if (!user.tenantId || user.mustChangePassword || (await this.auth.statusOf(user.tenantId)) !== 'ACTIVE') {
+    if (!user.tenantId || user.mustChangePassword || user.aal !== 'aal2' || (await this.auth.statusOf(user.tenantId)) !== 'ACTIVE') {
       socket.emit('error', { code: 'FORBIDDEN' });
       return socket.disconnect(true);
     }

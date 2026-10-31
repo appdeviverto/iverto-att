@@ -65,6 +65,36 @@ export class SupabaseService {
     return !error;
   }
 
+  /** A one-time recovery token for the reset e-mail. Supabase sends nothing itself; we mail it via Resend. */
+  async recoveryToken(email: string): Promise<string> {
+    const { data, error } = await this.admin.auth.admin.generateLink({ type: 'recovery', email });
+    if (error) throw error;
+    return data.properties.hashed_token;
+  }
+
+  /** Spends a recovery token (single use, Supabase-side expiry) and returns whose it was, or null. */
+  async consumeRecoveryToken(tokenHash: string): Promise<string | null> {
+    const probe = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await probe.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash });
+    if (error || !data.user) return null;
+    // Revoke every session (the one verifyOtp just opened, and any an attacker holds).
+    if (data.session) await this.admin.auth.admin.signOut(data.session.access_token, 'global').catch(() => undefined);
+    return data.user.id;
+  }
+
+  /** Removes every 2FA factor, so the user enrols a new authenticator on next web sign-in. */
+  async resetMfa(userId: string) {
+    const { data, error } = await this.admin.auth.admin.mfa.listFactors({ userId });
+    if (error) throw error;
+    for (const f of data.factors) {
+      const res = await this.admin.auth.admin.mfa.deleteFactor({ userId, id: f.id });
+      if (res.error) throw res.error;
+    }
+    return data.factors.length;
+  }
+
   // ── Storage (all buckets private) ─────────────────────────────────────────
 
   async upload(bucket: string, path: string, body: Buffer, contentType: string) {

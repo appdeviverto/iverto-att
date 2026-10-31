@@ -20,7 +20,7 @@ import {
 } from 'class-validator';
 import { RecomputeQueue } from '../attendance/recompute.service';
 import { AuditableActionService } from '../audit/audit.service';
-import { actorOf, AuthUser, CurrentUser, Roles } from '../auth/auth.types';
+import { actorOf, AuthUser, CurrentUser, Roles, SkipMfa } from '../auth/auth.types';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { addDays, dbDate, localYmd, ymdOf } from '../common/time';
@@ -41,6 +41,8 @@ export class OrgSettingsDto {
   @IsOptional() @IsBoolean() storePunchPhotos?: boolean;
   /** Leaderboard: approved leave lowers attendance % (off = leave days are left out). */
   @IsOptional() @IsBoolean() leaveCountsAgainstAttendance?: boolean;
+  /** Interns (employmentType INTERN) are outside payroll: no leave types, balances or accruals. */
+  @IsOptional() @IsBoolean() internsEnabled?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(3650) punchPhotoRetentionDays?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(3650) reportRetentionDays?: number;
   @IsOptional() @ValidateNested() @Type(() => BrandingDto) branding?: BrandingDto;
@@ -133,6 +135,7 @@ export class OrgController {
   ) {}
 
   @Get()
+  @SkipMfa() // mobile leaderboard (docs/mobile_api.md §10.6)
   async get(@CurrentUser() user: AuthUser) {
     const t = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
     const { adminUserId, pendingAdmin, ...settings } = t.settings as Record<string, unknown>;
@@ -226,6 +229,7 @@ export class DepartmentsController {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditableActionService) {}
 
   @Get()
+  @SkipMfa() // mobile leaderboard (docs/mobile_api.md §10.6)
   list(@CurrentUser() user: AuthUser) {
     return this.prisma.department.findMany({
       where: { tenantId: user.tenantId },

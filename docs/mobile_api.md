@@ -96,10 +96,22 @@ GET /v1/mobile/me
     "canApprove": false,
     "teamView": false,
     "remoteWork": true,
-    "leave": true
+    "leave": true,
+    "fieldVisits": true
   }
 }
 ```
+
+#### Feature flags
+- `features.leave` is `false` for a login without an employee record, and for **interns** when the organisation has the interns setting on (interns have no leave). Hide the leave tab then; leave routes return `400 NO_LEAVE_FOR_INTERNS`.
+- `features.mobilePunch` is `NEVER`, `REMOTE_DAYS`, `ALWAYS` or `FULL_REMOTE` (fully remote employee: may always punch from the app, and every working day counts as remote).
+- `features.fieldVisits`: show the field-visit button (§7A).
+
+#### Two-factor sign-in is web-only
+The web app requires an authenticator-app code at every sign-in. The mobile app does **not**: every `/v1/mobile/*` route, plus `GET /v1/org`, `GET /v1/departments` and `GET /v1/attendance/overview` (leaderboard, §10.6), accept a password-only session. Any other `/v1` route returns `403 MFA_REQUIRED` to a mobile token, so don't call web routes beyond those.
+
+#### Forgot password
+The sign-in screen's "Forgot password?" calls `POST /v1/auth/forgot-password` with `{ "email": "…" }` (no `Authorization` header). It always answers `200 { "ok": true }`, whether or not the account exists, so show "If an account exists, we've e-mailed a link". The e-mailed link opens the web app's reset page; the new password then works in the mobile app too. A reset signs the user out on every device.
 
 #### Organisation branding
 Show the org's own logo and name in the app header and drawer instead of the Iverto logo, with a small "Powered by iverto.ai" line at the bottom of the drawer or settings screen. Admins set both under **Settings → Organisation** on the web; reports use the same values.
@@ -111,6 +123,21 @@ Show the org's own logo and name in the app header and drawer instead of the Ive
 | `organisation.primaryColor` | An optional `#RRGGBB` accent colour, or `null`. |
 
 Re-read `/me` on app start and on resume, so a logo change shows up without needing to sign in again.
+
+#### Logins without an employee record
+Admins and HR users don't need an employee record (an organisation's first admin never has one). For them `employee` is `null` and `features.leave` / `features.remoteWork` are `false`. The app must still open for them: the self-service reads below return empty data instead of an error, so the home screen can lead with the team board and approvals.
+
+| Endpoint | Without an employee record |
+|---|---|
+| `GET /v1/mobile/today` | `day: null`, `punches: []`, `nextShift: null`, `mobilePunch: { "mode": "NEVER", "allowedNow": false }` |
+| `GET /v1/mobile/attendance?month=` | `days: []`, every total `0` |
+| `GET /v1/mobile/attendance/:date` | `404 NOT_FOUND` |
+| `GET /v1/mobile/schedule` | `days: []` |
+| `GET /v1/mobile/holidays` | `holidays: []` |
+| `GET /v1/mobile/leave/balances` | `employeeId: null`, `balances: []` |
+| `GET /v1/mobile/leave/types` | `[]` |
+
+Actions taken as the employee (mobile punch, leave, corrections, remote work, check-ins) still return `403 NO_EMPLOYEE`, so hide them when `employee` is `null`.
 
 ---
 
@@ -407,7 +434,7 @@ Detailed inspection for an individual day (formatted `YYYY-MM-DD`). Includes pai
 POST /v1/mobile/punches
 ```
 Records an in-app remote/field check-in: a geo-tagged selfie plus the GPS fix. Step-by-step guide with Android code: [`remote_checkin_mobile_api.md`](./remote_checkin_mobile_api.md).
-- **Authorization**: Allowed if employee policy is `ALWAYS`, or `REMOTE_DAYS` with approved remote work today.
+- **Authorization**: Allowed if employee policy is `ALWAYS` or `FULL_REMOTE`, or `REMOTE_DAYS` with approved remote work today.
 - **Selfie (required)**: `selfieBase64` is a base64 JPEG taken with the front camera at the moment of the punch, at most **2 MB** decoded (resize to ~720 px wide, quality 80 is plenty). Non-JPEG → `400 FILE_TYPE_MISMATCH`; too large → `413 FILE_TOO_LARGE`. The server stores it in a private Azure Blob container; the app never talks to Azure directly.
 - **Review**: Every mobile punch is created with `reviewStatus: "PENDING"` and counts towards the day immediately. A manager/HR/admin then approves or rejects it; a rejected punch (`reviewStatus: "REJECTED"`, `outcome: "DENIED"`) drops out of the day's attendance and the employee receives a `MOBILE_PUNCH_REJECTED` notification. `GET /v1/mobile/today` and `/v1/mobile/attendance/:date` return `reviewStatus` / `reviewNote` on each punch so the app can show the state.
 - **Server Timestamp**: The server's timestamp is authoritative; `clientTime` is preserved strictly for diagnostic audit.
@@ -683,6 +710,18 @@ Allows employees to propose in/out times for days with missed punches or hardwar
   "reason": "Terminal was offline during morning entry"
 }
 ```
+- `fieldVisitId` (optional): attach one of **your own** field visits (§7A) as proof, e.g. the visit taken at the client's when you left. Someone else's visit, or an unknown id → `400 BAD_PROOF`.
+
+```json
+{
+  "date": "2026-03-27",
+  "out": "18:10",
+  "reason": "Went to Acme Ltd after lunch and left from there",
+  "fieldVisitId": "fv-31"
+}
+```
+
+Corrections returned by §7.1 and the approvals queue carry `fieldVisit` (`null` when no proof was attached), with the same fields as §7A plus a fresh 1-hour `photoUrl`.
 
 #### Response `201 Created`
 ```json
@@ -695,6 +734,61 @@ Allows employees to propose in/out times for days with missed punches or hardwar
   "reason": "Terminal was offline during morning entry"
 }
 ```
+
+---
+
+## 7A. Field Visits (Geotagged Proof)
+
+For staff who leave the office during the day for a client's site and go home from there without punching out on the terminal. A **field visit** is a selfie + GPS fix + **server** timestamp taken in the app, kept as proof that the person was working at that place and time. It is **not** a punch and never changes attendance on its own. Later, the employee requests a correction (§7.2) and attaches the visit as proof; the approver sees the photo on a map on the web before approving.
+
+Show the feature when `/me` → `features.fieldVisits` is `true` (any login linked to an employee). Suggested UI: a "Field visit" button on the home screen, and a "Proof" picker on the correction form listing that day's visits.
+
+### 7A.1 Record a Field Visit
+```http
+POST /v1/mobile/field-visits
+Header: Idempotency-Key: <unique-uuid>
+```
+- **Selfie (required)**: same rules as the mobile punch (§4.4): base64 JPEG from the front camera, taken in-app at that moment (no gallery picks), at most **2 MB** decoded. Non-JPEG → `400 FILE_TYPE_MISMATCH`; too large → `413 FILE_TOO_LARGE`.
+- **Time**: the server's receive time is stored as `takenAt`. Don't queue visits offline and send them later; they'd be stamped with the send time.
+- `note` (optional, ≤ 500 chars): e.g. the client's name.
+- No employee record → `403 NO_EMPLOYEE`; exited → `403 EMPLOYEE_EXITED`.
+
+#### Request Body
+```json
+{
+  "lat": 18.52043,
+  "lng": 73.85674,
+  "accuracy": 12.5,
+  "isMockLocation": false,
+  "note": "Acme Ltd, Hinjewadi",
+  "selfieBase64": "/9j/4AAQSkZJRgABAQ..."
+}
+```
+
+#### Response `201 Created`
+```json
+{
+  "id": "fv-31",
+  "employeeId": "88cfc843-e6ef-4613-8991-ecff02a9e334",
+  "employee": { "fullName": "Rahul Sharma", "employeeCode": "EMP-0412" },
+  "takenAt": "2026-03-27T12:40:16.210Z",
+  "local": "2026-03-27 18:10",
+  "timezone": "Asia/Kolkata",
+  "lat": 18.52043,
+  "lng": 73.85674,
+  "accuracy": 12.5,
+  "isMockLocation": false,
+  "note": "Acme Ltd, Hinjewadi",
+  "photoUrl": "https://<account>.blob.core.windows.net/punch-selfies/...&sig=..."
+}
+```
+`photoUrl` is a read link valid for 1 hour; re-fetch the list rather than caching it.
+
+### 7A.2 My Field Visits
+```http
+GET /v1/mobile/field-visits?date=2026-03-27&cursor=&limit=20
+```
+Newest first. `date` (optional, `YYYY-MM-DD`) narrows to that local day in the employee's site timezone, which is what the correction form's proof picker needs. Returns `{ "data": [ <field visit as above> ], "nextCursor": null }`.
 
 ---
 

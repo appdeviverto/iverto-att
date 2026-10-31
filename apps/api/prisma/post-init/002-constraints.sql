@@ -10,7 +10,7 @@ END $$ LANGUAGE plpgsql;
 SELECT pg_temp.add_check('tenants', 'tenants_status_chk', $$status IN ('PROVISIONING','ACTIVE','SUSPENDED')$$);
 SELECT pg_temp.add_check('user_profiles', 'user_profiles_role_chk', $$role IN ('ADMIN','HR','MANAGER','EMPLOYEE','PLATFORM_ADMIN')$$);
 SELECT pg_temp.add_check('user_profiles', 'user_profiles_status_chk', $$status IN ('ACTIVE','DISABLED','EXITED')$$);
-SELECT pg_temp.add_check('employees', 'employees_mobile_punch_chk', $$mobile_punch IN ('NEVER','REMOTE_DAYS','ALWAYS')$$);
+SELECT pg_temp.add_check('employees', 'employees_mobile_punch_chk', $$mobile_punch IN ('NEVER','REMOTE_DAYS','ALWAYS','FULL_REMOTE')$$);
 SELECT pg_temp.add_check('employees', 'employees_status_chk', $$status IN ('ACTIVE','EXITED')$$);
 SELECT pg_temp.add_check('devices', 'devices_direction_chk', $$direction IN ('IN','OUT','BOTH')$$);
 SELECT pg_temp.add_check('punches', 'punches_source_chk', $$source IN ('TERMINAL','MOBILE','CORRECTION','MANUAL')$$);

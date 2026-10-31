@@ -20,10 +20,10 @@ async function bootstrap() {
   app.setGlobalPrefix(apiPrefix);
 
   await app.register(helmet, { contentSecurityPolicy: false });
-  // Tighter on the mobile surface and on password changes (§17).
+  // Tighter on the mobile surface and on password changes/resets (§17).
   await app.register(rateLimit, {
     global: true,
-    max: (req) => (req.url.includes('/mobile/') ? 120 : req.url.includes('/auth/password') ? 10 : 600),
+    max: (req) => (req.url.includes('/mobile/') ? 120 : req.url.includes('/auth/') ? 10 : 600),
     timeWindow: '1 minute',
     keyGenerator: (req) => (req.headers.authorization ?? req.ip).slice(-64),
     allowList: (req) => req.url.includes('/health/'),

@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { AuditableActionService } from '../audit/audit.service';
+import { AzureBlobService } from '../common/azure-blob.service';
 import { actorOf, AuthUser, CurrentUser, isHrOrAdmin } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
@@ -23,6 +24,8 @@ export class CreateCorrectionDto {
   @IsOptional() @Matches(TIME_OR_INSTANT, { message: 'in must be HH:mm or an ISO datetime' }) in?: string;
   @IsOptional() @Matches(TIME_OR_INSTANT, { message: 'out must be HH:mm or an ISO datetime' }) out?: string;
   @IsString() @MinLength(3) @MaxLength(500) reason: string;
+  /** Proof: one of the employee's own field visits (geotagged selfie from the app). */
+  @IsOptional() @IsString() fieldVisitId?: string;
 }
 
 export class DecisionDto {
@@ -52,6 +55,7 @@ export class CorrectionsService {
     private readonly audit: AuditableActionService,
     private readonly punches: PunchesService,
     private readonly notifications: NotificationsService,
+    private readonly blobs: AzureBlobService,
   ) {}
 
   async list(user: AuthUser, q: RequestListQuery, mineOnly = false) {
@@ -64,12 +68,19 @@ export class CorrectionsService {
         employee,
         workDate: q.from || q.to ? { gte: q.from ? dbDate(q.from) : undefined, lte: q.to ? dbDate(q.to) : undefined } : undefined,
       },
-      include: { employee: { select: { id: true, fullName: true, employeeCode: true } } },
+      include: { employee: { select: { id: true, fullName: true, employeeCode: true } }, fieldVisit: true },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
-    const data = rows.slice(0, limit).map((r) => ({ ...r, workDate: ymdOf(r.workDate) }));
+    const data = await Promise.all(
+      rows.slice(0, limit).map(async ({ fieldVisit: v, ...r }) => ({
+        ...r,
+        workDate: ymdOf(r.workDate),
+        // Proof photo with a 1-hour link; the key itself never leaves the API.
+        fieldVisit: v ? { id: v.id, takenAt: v.takenAt, lat: v.lat, lng: v.lng, accuracy: v.accuracy, isMockLocation: v.isMockLocation, note: v.note, photoUrl: await this.blobs.readUrl(v.photoKey) } : null,
+      })),
+    );
     return { data, nextCursor: rows.length > limit ? data[data.length - 1].id : null };
   }
 
@@ -86,13 +97,16 @@ export class CorrectionsService {
     // "out" earlier than "in" on the form means the next morning (night shift).
     if (inAt && outAt && outAt <= inAt && dto.out!.length === 5) outAt = this.instant(addDays(dto.date, 1), dto.out!, site.timezone);
     if (inAt && outAt && outAt <= inAt) throw new AppError(400, 'OUT_BEFORE_IN', 'Out must be after in');
+    if (dto.fieldVisitId && !(await this.prisma.fieldVisit.findFirst({ where: { id: dto.fieldVisitId, tenantId: user.tenantId, employeeId: employee.id } }))) {
+      throw new AppError(400, 'BAD_PROOF', 'Attach one of this employee’s own field visits');
+    }
 
     const correction = await this.audit.run({
       action: 'CORRECTION_REQUESTED',
       targetType: 'AttendanceCorrection',
       actor: actorOf(user),
       tenantId: user.tenantId,
-      payloadFrom: () => ({ employeeId: employee.id, date: dto.date, inAt, outAt, reason: dto.reason }),
+      payloadFrom: () => ({ employeeId: employee.id, date: dto.date, inAt, outAt, reason: dto.reason, fieldVisitId: dto.fieldVisitId ?? null }),
       run: (tx) =>
         tx.attendanceCorrection.create({
           data: {
@@ -102,6 +116,7 @@ export class CorrectionsService {
             inAt,
             outAt,
             reason: dto.reason,
+            fieldVisitId: dto.fieldVisitId,
             requestedBy: user.sub,
           },
         }),

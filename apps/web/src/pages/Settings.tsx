@@ -1,7 +1,7 @@
 import {
   AppearanceSettings, Badge, Button, Callout, Card, CenteredSpinner, CopyField, DataTable, DescriptionList, EmptyState, IconButton, Modal, Pagination, PasswordStrength, Select, SettingsLayout, TextField, confirmAction,
 } from '@iverto-org/core-ui';
-import { Building2, ClipboardList, KeyRound, Layers, MapPin, Palette, Plus, Scale, ShieldCheck, Users, FolderKanban, UserX, UserCheck } from 'lucide-react';
+import { Building2, ClipboardList, KeyRound, Layers, MapPin, Palette, Plus, Scale, ShieldCheck, ShieldOff, Users, FolderKanban, UserX, UserCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { Crud } from '../components/Crud';
@@ -61,7 +61,7 @@ function Organisation() {
 function OrgForm({ org }: { org: Org }) {
   const s = org.settings ?? {};
   const [f, , setF] = useForm<Record<string, any>>({
-    name: org.name, dayBoundary: s.dayBoundary ?? '04:00', defaultWeeklyOffs: s.defaultWeeklyOffs ?? [0], storePunchPhotos: Boolean(s.storePunchPhotos), leaveCountsAgainstAttendance: Boolean(s.leaveCountsAgainstAttendance),
+    name: org.name, dayBoundary: s.dayBoundary ?? '04:00', defaultWeeklyOffs: s.defaultWeeklyOffs ?? [0], storePunchPhotos: Boolean(s.storePunchPhotos), leaveCountsAgainstAttendance: Boolean(s.leaveCountsAgainstAttendance), internsEnabled: Boolean(s.internsEnabled),
     punchPhotoRetentionDays: s.punchPhotoRetentionDays ?? 90, reportRetentionDays: s.reportRetentionDays ?? 90,
     displayName: s.branding?.displayName ?? '', logoUrl: s.branding?.logoUrl ?? '', primaryColor: s.branding?.primaryColor ?? null,
   });
@@ -81,6 +81,7 @@ function OrgForm({ org }: { org: Org }) {
           { key: 'punchPhotoRetentionDays', label: 'Punch photo retention (days)', type: 'number', when: (x) => x.storePunchPhotos },
           { key: 'reportRetentionDays', label: 'Report file retention (days)', type: 'number' },
           { key: 'leaveCountsAgainstAttendance', label: 'Approved leave lowers attendance score', type: 'bool', hint: 'Leaderboard. Off: approved leave days are left out; unapproved absences always count.' },
+          { key: 'internsEnabled', label: 'Interns', type: 'bool', hint: 'Adds an Interns view under Employees. Employees with employment type “Intern” get no leave — no leave types, balances or accruals — since they are outside payroll.' },
           { key: 'displayName', label: 'Display name', hint: 'Shown beside the logo in the web and mobile apps, and in report headers' },
           { key: 'logoUrl', label: 'Logo URL (https)', hint: 'Replaces the Iverto logo in the web app, mobile app and reports. Square images look best.' },
           { key: 'primaryColor', label: 'Report accent colour', type: 'color' },
@@ -175,6 +176,7 @@ function UsersSection() {
   const deactivate = useAction((id: string) => del(`/users/${id}`), { invalidate: ['/users'], success: 'User deactivated' });
   const reactivate = useAction((id: string) => post(`/users/${id}/reactivate`), { invalidate: ['/users'], success: 'User reactivated' });
   const reset = useAction((u: UserProfile) => post<{ temporaryPassword: string }>(`/users/${u.userId}/reset-password`), { onSuccess: (r, u) => setTemp({ email: u.email, password: r.temporaryPassword }) });
+  const resetMfa = useAction((id: string) => post(`/users/${id}/reset-mfa`), { success: 'Two-factor reset — they set up a new authenticator at their next sign-in' });
   const admin = me.role === 'ADMIN';
   return (
     <div className="space-y-4">
@@ -194,6 +196,7 @@ function UsersSection() {
           ]}
           rowActions={(u) => u.userId === me.id ? null : <>
             <IconButton label="Reset password" icon={<KeyRound size={16} />} onClick={() => reset.mutate(u)} />
+            <IconButton label="Reset two-factor" icon={<ShieldOff size={16} />} onClick={async () => { if (await confirmAction({ title: `Reset two-factor for ${u.displayName}?`, message: 'Removes their authenticator app. They must set up a new one the next time they sign in on the web. Use this when they lose or replace their phone.', confirmLabel: 'Reset two-factor' })) resetMfa.mutate(u.userId); }} />
             {admin && (u.status === 'ACTIVE'
               ? <IconButton label="Deactivate" icon={<UserX size={16} />} onClick={async () => { if (await confirmAction({ title: `Deactivate ${u.displayName}?`, message: 'They are signed out and cannot sign in. Their email stays reserved.', confirmLabel: 'Deactivate user' })) deactivate.mutate(u.userId); }} />
               : <IconButton label="Reactivate" icon={<UserCheck size={16} />} onClick={() => reactivate.mutate(u.userId)} />)}

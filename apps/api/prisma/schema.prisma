@@ -177,7 +177,7 @@ model Employee {
   employmentType     String    @default("FULL_TIME") @map("employment_type")
   joinedOn           DateTime  @db.Date @map("joined_on")
   exitOn             DateTime? @db.Date @map("exit_on")
-  mobilePunch        String    @default("NEVER") @map("mobile_punch") // NEVER | REMOTE_DAYS | ALWAYS
+  mobilePunch        String    @default("NEVER") @map("mobile_punch") // NEVER | REMOTE_DAYS | ALWAYS | FULL_REMOTE
   status             String    @default("ACTIVE") // ACTIVE | EXITED
   userId             String?   @unique @map("user_id")
   biometricConsentAt DateTime? @map("biometric_consent_at")
@@ -195,6 +195,7 @@ model Employee {
   remoteRequests RemoteWorkRequest[]
   corrections  AttendanceCorrection[]
   projects     EmployeeProject[]
+  fieldVisits  FieldVisit[]
 
   @@unique([tenantId, employeeCode])
   @@index([tenantId, status])
@@ -384,13 +385,39 @@ model AttendanceCorrection {
   approverId   String?   @map("approver_id")
   decidedAt    DateTime? @map("decided_at")
   decisionNote String?   @map("decision_note")
+  /// Proof the employee attached: a field visit taken in the app.
+  fieldVisitId String?   @map("field_visit_id")
   createdAt    DateTime  @default(now()) @map("created_at")
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  fieldVisit FieldVisit? @relation(fields: [fieldVisitId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([employeeId, workDate])
   @@map("attendance_corrections")
+}
+
+/// A geotagged, timestamped selfie taken in the mobile app while working off-site
+/// (e.g. at a client's). Never counts as a punch; it is attached to a correction as proof.
+model FieldVisit {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  employeeId     String   @map("employee_id")
+  /// Server time when received — the device clock is not trusted (§9).
+  takenAt        DateTime @db.Timestamptz(3) @map("taken_at")
+  lat            Float
+  lng            Float
+  accuracy       Float
+  isMockLocation Boolean? @map("is_mock_location")
+  photoKey       String   @map("photo_key") // Azure blob key, same container as mobile punch selfies
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  employee    Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  corrections AttendanceCorrection[]
+
+  @@index([employeeId, takenAt])
+  @@map("field_visits")
 }
 
 // ── Schedule ────────────────────────────────────────────────────────────────

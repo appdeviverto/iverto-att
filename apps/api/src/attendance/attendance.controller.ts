@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { AuditableActionService } from '../audit/audit.service';
-import { actorOf, AuthUser, CurrentUser, Roles } from '../auth/auth.types';
+import { actorOf, AuthUser, CurrentUser, Roles, SkipMfa } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
@@ -157,6 +157,7 @@ export class AttendanceController {
 
   /** Month overview: per-employee totals + per-day distribution (+ muster grid on request). */
   @Get('overview')
+  @SkipMfa() // mobile leaderboard (docs/mobile_api.md §10.6)
   async overview(@CurrentUser() user: AuthUser, @Query() q: OverviewQuery) {
     const { from, to } = monthRange(q.month);
     const where: Prisma.AttendanceDayWhereInput = {

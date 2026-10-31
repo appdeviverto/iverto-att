@@ -11,7 +11,7 @@ import { Pick, SitePicker } from './ui';
 type Key = 'employeeCode' | 'fullName' | 'departmentName' | 'designation' | 'managerCode' | 'email' | 'phone' | 'employmentType' | 'joinedOn' | 'mobilePunch';
 
 const EMPLOYMENT = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'];
-const MOBILE = ['NEVER', 'REMOTE_DAYS', 'ALWAYS'];
+const MOBILE = ['NEVER', 'REMOTE_DAYS', 'ALWAYS', 'FULL_REMOTE'];
 
 /** Every column the API's import understands (siteName comes from the location step). `aka` = header spellings we recognise. */
 const COLUMNS: { key: Key; label: string; required?: boolean; rule: string; aka: string[] }[] = [

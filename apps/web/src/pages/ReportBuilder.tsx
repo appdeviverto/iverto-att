@@ -322,7 +322,7 @@ const FIELD_HELP: Record<string, string> = {
   joinedMonth: 'Joining month as YYYY-MM — count by it for joiners per month.',
   exitOn: 'Exit date; empty for current staff.',
   'employees.status': 'Active or Exited.',
-  mobilePunch: 'Whether they may punch from the app: Never, Remote days or Always.',
+  mobilePunch: 'Whether they may punch from the app: Never, Remote days, Always or Fully remote.',
   biometricConsent: 'Yes once the employee has given biometric consent.',
 };
 

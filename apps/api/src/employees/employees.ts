@@ -17,7 +17,7 @@ import { TerminalsModule } from '../terminals/terminals.module';
 import { UsersModule } from '../users/users.controller';
 import { UsersService } from '../users/users.service';
 
-const MOBILE_PUNCH = ['NEVER', 'REMOTE_DAYS', 'ALWAYS'] as const;
+const MOBILE_PUNCH = ['NEVER', 'REMOTE_DAYS', 'ALWAYS', 'FULL_REMOTE'] as const;
 const EMPLOYMENT_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'];
 
 /** YYYY-MM-DD that is also a calendar date (rejects 2026-02-30). */
@@ -63,6 +63,8 @@ export class EmployeeQuery {
   @IsOptional() @IsString() projectId?: string;
   @IsOptional() @IsString() managerId?: string;
   @IsOptional() @IsIn(['ACTIVE', 'EXITED']) status?: string;
+  /** true = interns only, false = everyone but interns. */
+  @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean() intern?: boolean;
   /** Name, code or email contains. */
   @IsOptional() @IsString() @MaxLength(100) q?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
@@ -204,6 +206,7 @@ export class EmployeesService {
         q.managerId ? { managerId: q.managerId } : {},
         q.projectId ? { projects: { some: { projectId: q.projectId } } } : {},
         { status: q.status ?? 'ACTIVE' },
+        q.intern === undefined ? {} : q.intern ? { employmentType: 'INTERN' } : { employmentType: { not: 'INTERN' } },
         q.q
           ? {
               OR: [
@@ -283,7 +286,7 @@ export class EmployeesService {
       const slots = await this.prisma.terminalUser.findMany({ where: { subjectId: id, releasedAt: null } });
       for (const s of slots) await this.enrollment.syncUserPeriod(s.deviceId, after).catch(() => false);
     }
-    if (dto.siteId || dto.departmentId !== undefined || joinedOn || exitOn !== undefined) {
+    if (dto.siteId || dto.departmentId !== undefined || joinedOn || exitOn !== undefined || dto.mobilePunch) {
       const today = localYmd(new Date(), 'UTC');
       await this.queue.bulk({ tenantId: user.tenantId, employeeIds: [id], from: addDays(today, -1), to: addDays(today, 14), rematerialise: true });
     }
@@ -333,7 +336,7 @@ export class EmployeesService {
       if (!site) fail('siteName', `unknown site "${get('siteName')}"`);
       if (get('departmentName') && !dept) fail('departmentName', `unknown department "${get('departmentName')}"`);
       if (!isRealYmd(joinedOn)) fail('joinedOn', 'joinedOn must be a real date as YYYY-MM-DD');
-      if (!(MOBILE_PUNCH as readonly string[]).includes(mobilePunch)) fail('mobilePunch', 'mobilePunch must be NEVER, REMOTE_DAYS or ALWAYS');
+      if (!(MOBILE_PUNCH as readonly string[]).includes(mobilePunch)) fail('mobilePunch', `mobilePunch must be ${MOBILE_PUNCH.join(', ')}`);
       if (!EMPLOYMENT_TYPES.includes(employmentType)) fail('employmentType', `employmentType must be ${EMPLOYMENT_TYPES.join(', ')}`);
       if (get('email') && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(get('email'))) fail('email', 'invalid email');
       if (get('phone').length > 30) fail('phone', 'phone is longer than 30 characters');

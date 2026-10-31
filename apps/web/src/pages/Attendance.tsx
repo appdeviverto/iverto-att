@@ -1,9 +1,9 @@
 import {
-  Badge, Button, Switch, DataTable, DateInput, EmptyState, ListFooter, PageHeader, Pagination, PillTabs, SegmentedControl, Select, Textarea, TextField, Tooltip,
+  Badge, Button, Callout, DescriptionList, Modal, Switch, DataTable, DateInput, EmptyState, ListFooter, PageHeader, Pagination, PillTabs, SegmentedControl, Select, Textarea, TextField, Tooltip,
 } from '@iverto-org/core-ui';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
-import { CorrectionModal, DayDrawer } from '../components/DayDrawer';
+import { CorrectionModal, DayDrawer, FieldVisitProof, type FieldVisit } from '../components/DayDrawer';
 import { Decide, DepartmentSelect, EmployeePicker, FormModal, Panel, Pick, SiteSelect, useForm } from '../components/ui';
 import { post, useAction, useApi, useCursor, type Page } from '../lib/api';
 import { isHr, isManager, useMe } from '../lib/auth';
@@ -193,14 +193,18 @@ export function Overview() {
   );
 }
 
-interface Correction { id: string; employee: { fullName: string; employeeCode: string }; employeeId: string; workDate: string; inAt: string | null; outAt: string | null; reason: string; status: string; decisionNote: string | null; createdAt: string }
+interface Correction { id: string; employee: { fullName: string; employeeCode: string }; employeeId: string; workDate: string; inAt: string | null; outAt: string | null; reason: string; status: string; decisionNote: string | null; createdAt: string; fieldVisit: Omit<FieldVisit, 'local'> | null }
 
 export function Corrections() {
   const me = useMe();
   const [status, setStatus] = useState('PENDING');
   const [adding, setAdding] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const list = useCursor<Correction>('/attendance/corrections', { status: status === 'ALL' ? undefined : status });
   const t = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—');
+  const canDecide = (r: Correction) => r.status === 'PENDING' && isManager(me) && r.employeeId !== me.employeeId;
+  // From the list, so the dialog closes once a decision moves the row off this tab.
+  const open = list.rows.find((r) => r.id === openId);
 
   return (
     <div className="space-y-6">
@@ -208,19 +212,37 @@ export function Corrections() {
         actions={<Button leftIcon={<Plus size={16} />} onClick={() => setAdding(true)}>Request correction</Button>}
         filters={<PillTabs label="Status" value={status} onChange={setStatus} tabs={['PENDING', 'APPROVED', 'REJECTED', 'ALL'].map((s) => ({ value: s, label: s === 'ALL' ? 'All' : REQUEST_STATUS[s].label }))} />} />
       <Panel>
-        <DataTable rows={list.rows} getRowKey={(r) => r.id} loading={list.isLoading}
+        <DataTable rows={list.rows} getRowKey={(r) => r.id} loading={list.isLoading} onRowClick={(r) => setOpenId(r.id)}
           empty={<EmptyState title={status === 'PENDING' ? 'Nothing waiting for review' : 'No corrections here'} />}
           columns={[
             { key: 'e', header: 'Employee', render: (r) => <span className="font-semibold text-fg">{r.employee.fullName}</span> },
             { key: 'd', header: 'Day', render: (r) => r.workDate },
             { key: 'io', header: 'In / out', render: (r) => `${t(r.inAt)} / ${t(r.outAt)}` },
             { key: 'reason', header: 'Reason', render: (r) => <span className="text-fg-muted">{r.reason}</span> },
+            { key: 'p', header: 'Proof', render: (r) => r.fieldVisit
+              ? <span className="flex items-center gap-2"><img src={r.fieldVisit.photoUrl} alt="Field visit selfie" className="size-10 rounded-full object-cover" loading="lazy" />{r.fieldVisit.isMockLocation && <Badge tone="danger">Mock location</Badge>}</span>
+              : <span className="text-fg-subtle">—</span> },
             { key: 's', header: 'Status', render: (r) => <StatusBadge value={r.status} map={REQUEST_STATUS} /> },
-            { key: 'a', header: '', render: (r) => r.status === 'PENDING' && isManager(me) && r.employeeId !== me.employeeId ? <Decide path="/attendance/corrections" id={r.id} noun="Correction" canDecide /> : null },
+            { key: 'a', header: '', render: (r) => canDecide(r) ? <Decide path="/attendance/corrections" id={r.id} noun="Correction" canDecide /> : null },
           ]} />
         <ListFooter count={list.rows.length} noun="corrections" hasMore={Boolean(list.hasNextPage)} loadingMore={list.isFetchingNextPage} onLoadMore={() => void list.fetchNextPage()} />
       </Panel>
       {adding && <CorrectionModal open onClose={() => setAdding(false)} />}
+      {open && (
+        <Modal open onClose={() => setOpenId(null)} size="lg" title={`${open.employee.fullName} · correction for ${open.workDate}`}
+          description={`In ${t(open.inAt)} · Out ${t(open.outAt)}`}
+          footer={canDecide(open) ? <Decide path="/attendance/corrections" id={open.id} noun="Correction" canDecide /> : undefined}>
+          <div className="space-y-4 p-5 sm:p-6">
+            <DescriptionList columns={1} items={[
+              { term: 'Reason', value: open.reason },
+              { term: 'Status', value: <span><StatusBadge value={open.status} map={REQUEST_STATUS} />{open.decisionNote ? ` ${open.decisionNote}` : ''}</span> },
+            ]} />
+            {open.fieldVisit
+              ? <FieldVisitProof visit={open.fieldVisit} />
+              : <Callout tone="neutral" title="No proof attached">The employee didn’t attach a field visit from the mobile app.</Callout>}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
