@@ -75,6 +75,16 @@ export class UsersService {
       throw new AppError(409, 'EMAIL_IN_USE', 'This email is already used by another account');
     }
 
+    if (input.employeeId) {
+      // One login per person (user_profiles.employee_id is unique): say so before creating the auth user.
+      if (!(await this.prisma.employee.count({ where: { id: input.employeeId, tenantId: input.tenantId } }))) {
+        throw new AppError(404, 'EMPLOYEE_NOT_FOUND', 'Employee not found');
+      }
+      if (await runAsSystem(() => this.prisma.userProfile.count({ where: { employeeId: input.employeeId } }))) {
+        throw new AppError(409, 'EMPLOYEE_HAS_LOGIN', 'This employee already has a login');
+      }
+    }
+
     const password = temporaryPassword();
     let authUser: { id: string };
     try {

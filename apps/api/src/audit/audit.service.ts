@@ -97,10 +97,10 @@ export class AuditController {
       targetId: q.targetId,
       createdAt: q.from || q.to ? { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } : undefined,
     };
-    const [items, total] = await Promise.all([
-      this.prisma.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }),
-      this.prisma.auditLog.count({ where }),
-    ]);
+    const [items, total] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }),
+      tx.auditLog.count({ where }),
+    ]));
     return { items, total, page, size };
   }
 }

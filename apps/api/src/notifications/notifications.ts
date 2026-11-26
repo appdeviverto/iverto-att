@@ -47,13 +47,20 @@ export class NotificationsService {
     if (!ids.length) return;
     try {
       await runAsSystem(async () => {
+        // One insert and one device lookup for all recipients (HR fan-out, payroll paid), not two per person.
+        const data = (n.data ?? {}) as Prisma.InputJsonValue;
+        const [rows, devices] = await Promise.all([
+          this.prisma.appNotification.createManyAndReturn({
+            data: ids.map((userId) => ({ tenantId, userId, type: n.type, title: n.title, body: n.body, data })),
+          }),
+          this.prisma.pushDevice.findMany({ where: { tenantId, userId: { in: ids }, active: true } }),
+        ]);
         for (const userId of ids) {
-          const row = await this.prisma.appNotification.create({
-            data: { tenantId, userId, type: n.type, title: n.title, body: n.body, data: (n.data ?? {}) as Prisma.InputJsonValue },
-          });
+          const row = rows.find((r) => r.userId === userId);
+          if (!row) continue;
           this.live.emitToUser('notification.new', userId, row);
           // Inbox first; a failed push never undoes the row or the action.
-          await this.push(tenantId, userId, row.id, n).catch((err) => this.logger.warn(`Push ${n.type} failed: ${(err as Error).message}`));
+          await this.push(devices.filter((d) => d.userId === userId), row.id, n).catch((err) => this.logger.warn(`Push ${n.type} failed: ${(err as Error).message}`));
         }
       });
     } catch (err) {
@@ -62,8 +69,7 @@ export class NotificationsService {
   }
 
   /** One user's devices (≤500 per user in practice, so one multicast). See docs/fcm_server_changes.md §5–7. */
-  private async push(tenantId: string, userId: string, notificationId: string, n: NotificationInput) {
-    const devices = await this.prisma.pushDevice.findMany({ where: { tenantId, userId, active: true } });
+  private async push(devices: Array<{ token: string }>, notificationId: string, n: NotificationInput) {
     if (!devices.length) return;
     if (!this.fcm) {
       this.logger.debug(`[no FCM] ${n.type} → ${devices.length} device(s)`);
@@ -105,7 +111,7 @@ export class NotificationsService {
     });
   }
 
-  async approvalPending(tenantId: string, employeeId: string, type: 'leave' | 'correction' | 'remote', id: string, who: string, hrOnly = false) {
+  async approvalPending(tenantId: string, employeeId: string, type: 'leave' | 'correction' | 'remote' | 'expense' | 'profile', id: string, who: string, hrOnly = false) {
     const approvers = await this.approversFor(tenantId, employeeId, hrOnly);
     for (const userId of approvers) this.live.emitToUser('approval.pending', userId, { type, id });
     await this.notify(tenantId, approvers, {
@@ -124,13 +130,15 @@ export class NotificationsService {
 
   /** Inbox (cursor = id of the last item received). */
   async inbox(userId: string, cursor?: string, limit = 20) {
-    const items = await this.prisma.appNotification.findMany({
-      where: { userId },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
-    const unread = await this.prisma.appNotification.count({ where: { userId, readAt: null } });
+    const [items, unread] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.appNotification.findMany({
+        where: { userId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      }),
+      tx.appNotification.count({ where: { userId, readAt: null } }),
+    ]));
     const hasMore = items.length > limit;
     const data = items.slice(0, limit);
     return { data, nextCursor: hasMore ? data[data.length - 1].id : null, unreadCount: unread };

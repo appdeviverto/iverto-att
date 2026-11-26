@@ -152,6 +152,9 @@ try {
   const slot = r.body.terminalUserId;
   ok(/UserPeriod_Used|UserPeriod/.test(simOut) || true, 'UserPeriod sent');
   killProc(sim);
+  // A registered serial cannot Register again until an admin re-arms it (no M50_CLOUD_ID locally).
+  r = await call(admin, 'POST', `/terminals/${deviceId}/rearm`);
+  ok(r.status === 201, 'terminal re-armed for the second simulator run', r.body);
   const sim2 = spawn('npx', ['ts-node', 'scripts/m50-simulator.ts', '--url', 'ws://localhost:8040/m50', '--serial', 'SIM-001', '--user', String(slot), '--scan-interval', '6'], { cwd: API_DIR, shell: true });
   let sim2Out = '';
   sim2.stdout.on('data', (d) => (sim2Out += d));

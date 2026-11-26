@@ -36,27 +36,30 @@ export class LiveService {
         q.projectId ? { projects: { some: { projectId: q.projectId, OR: [{ to: null }, { to: { gte: now } }] } } } : {},
       ],
     };
-    const sites = await this.prisma.site.findMany({ where: { tenantId: user.tenantId, ...(q.siteId ? { id: q.siteId } : {}) } });
-    // "Today" is each employee's own site's today.
-    const siteToday = sites.map((s) => ({ siteId: s.id, workDate: dbDate(localYmd(now, s.timezone)) }));
-
-    const [days, devices, punches] = await Promise.all([
-      this.prisma.attendanceDay.findMany({
-        where: { employee: where, OR: siteToday },
-        include: { employee: true },
-        orderBy: { employee: { fullName: 'asc' } },
-      }),
-      this.prisma.device.findMany({
-        where: { tenantId: user.tenantId, ...(q.siteId ? { siteId: q.siteId } : {}) },
-        select: { id: true, name: true, serialNo: true, gateName: true, direction: true, siteId: true, status: true, lastSeenAt: true },
-      }),
-      this.prisma.punch.findMany({
-        where: { tenantId: user.tenantId, employee: where, punchedAt: { gte: new Date(now.getTime() - 12 * 3_600_000) } },
-        include: { employee: true, device: true },
-        orderBy: { punchedAt: 'desc' },
-        take: 30,
-      }),
-    ]);
+    // The board is polled: one transaction (one connection, one set_config) for all four reads.
+    const [sites, days, devices, punches] = await this.prisma.$transaction(async (tx) => {
+      const sites = await tx.site.findMany({ where: { tenantId: user.tenantId, ...(q.siteId ? { id: q.siteId } : {}) } });
+      // "Today" is each employee's own site's today.
+      const siteToday = sites.map((s) => ({ siteId: s.id, workDate: dbDate(localYmd(now, s.timezone)) }));
+      const [days, devices, punches] = await Promise.all([
+        tx.attendanceDay.findMany({
+          where: { employee: where, OR: siteToday },
+          include: { employee: true },
+          orderBy: { employee: { fullName: 'asc' } },
+        }),
+        tx.device.findMany({
+          where: { tenantId: user.tenantId, ...(q.siteId ? { siteId: q.siteId } : {}) },
+          select: { id: true, name: true, serialNo: true, gateName: true, direction: true, siteId: true, status: true, lastSeenAt: true },
+        }),
+        tx.punch.findMany({
+          where: { tenantId: user.tenantId, employee: where, punchedAt: { gte: new Date(now.getTime() - 12 * 3_600_000) } },
+          include: { employee: true, device: true },
+          orderBy: { punchedAt: 'desc' },
+          take: 30,
+        }),
+      ]);
+      return [sites, days, devices, punches] as const;
+    });
 
     const counts = Object.fromEntries(LIVE_STATES.map((s) => [s, 0]));
     for (const d of days) counts[d.liveState] = (counts[d.liveState] ?? 0) + 1;

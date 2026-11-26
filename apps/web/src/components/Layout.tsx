@@ -2,14 +2,15 @@ import { AppShell, Kbd, Logo, type NavGroup } from '@iverto-org/core-ui';
 import { useState } from 'react';
 import {
   Activity, BarChart3, CalendarDays, CalendarRange, ClipboardCheck, Clock, Cpu, Home, LogOut, MapPin, Plane, ScanFace, Search,
-  Settings, Sun, TableProperties, Trophy, Users, Building2, ArrowLeftRight, Repeat,
+  Code2, Settings, Sun, TableProperties, Trophy, Users, Building2, ArrowLeftRight, Repeat, Wallet, FileText, Receipt, Package, Megaphone, Network, UserPen, ListChecks,
 } from 'lucide-react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { isHr, isManager, useAuth, useMe } from '../lib/auth';
-import { clearCache, useApi } from '../lib/api';
+import { clearCache, useApi, useFeatures } from '../lib/api';
 import { ROLE_LABEL } from '../lib/format';
 import { useLiveSocket } from '../lib/live';
 import { CommandPalette, SHORTCUT, useCommandPalette } from './CommandPalette';
+import { WhatsNew } from './WhatsNew';
 
 const icon = (I: typeof Home) => <I size={19} />;
 /** Fake href for the Search nav row; never a real route. */
@@ -43,6 +44,7 @@ export function Layout() {
 
   const mgr = isManager(me);
   const hr = isHr(me);
+  const features = useFeatures();
   const groups: NavGroup[] = [
     {
       label: 'Attendance',
@@ -81,9 +83,33 @@ export function Layout() {
         }]
       : []),
     {
-      label: 'Organisation',
+      label: 'People',
       items: [
         ...(mgr ? [{ label: 'Employees', hint: 'Directory & profiles', icon: icon(Users), href: '/employees' }] : []),
+        ...(features.hr
+          ? [
+              { label: 'Org chart', hint: 'Who reports to whom', icon: icon(Network), href: '/hr/org-chart' },
+              { label: 'My tasks', hint: 'Onboarding & offboarding', icon: icon(ListChecks), href: '/hr/tasks' },
+              { label: 'Expenses', hint: 'Claims & reimbursements', icon: icon(Receipt), href: '/hr/expenses' },
+              { label: 'Announcements', hint: 'Notices & policy updates', icon: icon(Megaphone), href: '/hr/announcements' },
+              ...(hr ? [{ label: 'Assets', hint: 'Laptops, phones, ID cards', icon: icon(Package), href: '/hr/assets' }] : []),
+            ]
+          : []),
+        ...(hr ? [{ label: 'Profile changes', hint: 'Requests from the app', icon: icon(UserPen), href: '/hr/profile-changes' }] : []),
+      ],
+    },
+    ...(features.payroll
+      ? [{
+          label: 'Payroll',
+          items: [
+            ...(hr ? [{ label: 'Payroll', hint: 'Runs, structures, loans', icon: icon(Wallet), href: '/payroll/runs' }] : []),
+            { label: 'My payslips', hint: 'Salary slips', icon: icon(FileText), href: '/payroll/mine' },
+          ],
+        }]
+      : []),
+    {
+      label: 'Organisation',
+      items: [
         ...(hr
           ? [
               { label: 'Terminals', hint: 'M50 devices', icon: icon(Cpu), href: '/terminals' },
@@ -94,7 +120,7 @@ export function Layout() {
         { label: 'Settings', icon: icon(Settings), href: '/settings' },
       ],
     },
-  ];
+  ].filter((g) => g.items.length); // e.g. People for an employee when HR is off
 
   const leaveTenant = () => {
     setOverride(null);
@@ -104,7 +130,7 @@ export function Layout() {
 
   return (
     <AppShell
-      navGroups={[{ label: '', items: [{ label: 'Search', icon: icon(Search), href: SEARCH, badge: <Kbd>{SHORTCUT}</Kbd> }] }, ...groups]}
+      navGroups={[{ label: '', items: [{ label: 'Search', icon: icon(Search), href: SEARCH, badge: <span className="nav-kbd"><Kbd>{SHORTCUT}</Kbd></span> }] }, ...groups]}
       activeHref={pathname}
       onNavigate={(item, e) => {
         e.preventDefault();
@@ -134,6 +160,7 @@ export function Layout() {
         Powered by <a href="https://iverto.ai" target="_blank" rel="noreferrer" className="font-semibold text-fg-muted hover:text-brand">iverto.ai</a>
       </p>
       <CommandPalette open={searching} onClose={() => setSearching(false)} navGroups={groups} />
+      <WhatsNew />
     </AppShell>
   );
 }
@@ -145,7 +172,11 @@ export function PlatformLayout() {
   const { pathname } = useLocation();
   return (
     <AppShell
-      navGroups={[{ label: 'Platform', items: [{ label: 'Tenants', hint: 'Organisations', icon: icon(Building2), href: '/platform' }] }]}
+      navGroups={[{ label: 'Platform', items: [
+        { label: 'Tenants', hint: 'Organisations', icon: icon(Building2), href: '/platform' },
+        { label: 'Announcements', hint: "What's new for org admins", icon: icon(Megaphone), href: '/platform/announcements' },
+        { label: 'Developer API', hint: 'Keys, policies, approvals', icon: icon(Code2), href: '/platform/api' },
+      ] }]}
       activeHref={pathname}
       onNavigate={(item, e) => {
         e.preventDefault();

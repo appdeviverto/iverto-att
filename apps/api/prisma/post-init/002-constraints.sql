@@ -39,6 +39,28 @@ SELECT pg_temp.add_check('attendance_corrections', 'attendance_corrections_some_
 SELECT pg_temp.add_check('attendance_policies', 'attendance_policies_late_deduction_chk', $$late_deduction IN ('NONE','HALF_DAY','FULL_DAY') AND late_deduction_every >= 1$$);
 SELECT pg_temp.add_check('report_jobs', 'report_jobs_format_chk', $$format IN ('csv','pdf')$$);
 
+-- Directory columns (nullable: existing employees have NULL, which every check allows).
+SELECT pg_temp.add_check('employees', 'employees_gender_chk', $$gender IS NULL OR gender IN ('MALE','FEMALE','OTHER')$$);
+SELECT pg_temp.add_check('employees', 'employees_marital_chk', $$marital_status IS NULL OR marital_status IN ('SINGLE','MARRIED','OTHER')$$);
+SELECT pg_temp.add_check('employees', 'employees_payment_mode_chk', $$payment_mode IS NULL OR payment_mode IN ('BANK','CASH','CHEQUE')$$);
+SELECT pg_temp.add_check('employees', 'employees_aadhaar_last4_chk', $$aadhaar_last4 IS NULL OR aadhaar_last4 ~ '^[0-9]{4}$'$$);
+SELECT pg_temp.add_check('employees', 'employees_pan_chk', $$pan IS NULL OR pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$'$$);
+SELECT pg_temp.add_check('employees', 'employees_ifsc_chk', $$bank_ifsc IS NULL OR bank_ifsc ~ '^[A-Z]{4}0[A-Z0-9]{6}$'$$);
+SELECT pg_temp.add_check('employees', 'employees_uan_chk', $$uan IS NULL OR uan ~ '^[0-9]{12}$'$$);
+
+-- HR & payroll
+SELECT pg_temp.add_check('profile_change_requests', 'profile_change_requests_status_chk', $$status IN ('PENDING','APPROVED','REJECTED','CANCELLED')$$);
+SELECT pg_temp.add_check('employee_tasks', 'employee_tasks_kind_chk', $$kind IN ('ONBOARDING','OFFBOARDING') AND assignee_role IN ('HR','IT','MANAGER','EMPLOYEE')$$);
+SELECT pg_temp.add_check('letter_templates', 'letter_templates_kind_chk', $$kind IN ('OFFER','APPOINTMENT','EXPERIENCE','RELIEVING','OTHER')$$);
+SELECT pg_temp.add_check('expense_claims', 'expense_claims_status_chk', $$status IN ('PENDING','APPROVED','REJECTED','CANCELLED') AND amount > 0$$);
+SELECT pg_temp.add_check('assets', 'assets_status_chk', $$status IN ('IN_STOCK','ASSIGNED','RETIRED') AND (status = 'ASSIGNED') = (employee_id IS NOT NULL)$$);
+SELECT pg_temp.add_check('platform_announcements', 'platform_announcements_kind_chk', $$kind IN ('UPDATE','FEATURE','CHANGELOG')$$);
+SELECT pg_temp.add_check('employee_salaries', 'employee_salaries_gross_chk', $$monthly_gross >= 0$$);
+SELECT pg_temp.add_check('payroll_adjustments', 'payroll_adjustments_kind_chk', $$kind IN ('EARNING','DEDUCTION') AND amount > 0 AND month ~ '^[0-9]{4}-[0-9]{2}$'$$);
+SELECT pg_temp.add_check('employee_loans', 'employee_loans_chk', $$status IN ('ACTIVE','CLOSED') AND principal > 0 AND emi > 0 AND start_month ~ '^[0-9]{4}-[0-9]{2}$'$$);
+SELECT pg_temp.add_check('payroll_runs', 'payroll_runs_chk', $$status IN ('DRAFT','APPROVED','PAID') AND period_end >= period_start AND month ~ '^[0-9]{4}-[0-9]{2}$'$$);
+SELECT pg_temp.add_check('payslips', 'payslips_payment_mode_chk', $$payment_mode IN ('BANK','CASH','CHEQUE')$$);
+
 -- No overlapping live requests / schedules per employee: a DB constraint, not app code (§8.2).
 ALTER TABLE leave_requests DROP CONSTRAINT IF EXISTS leave_requests_no_overlap;
 ALTER TABLE leave_requests ADD CONSTRAINT leave_requests_no_overlap

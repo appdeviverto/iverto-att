@@ -10,8 +10,9 @@ import { actorOf, AuthUser, CurrentUser, Roles } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
-import { dbDate, localYmd } from '../common/time';
+import { addDays, dbDate, localYmd } from '../common/time';
 import { IsYmd } from '../common/validators';
+import { assertPayrollOpen } from '../payroll/lock';
 import { LiveGateway } from '../live/live.gateway';
 
 export type PunchInput = Omit<Prisma.PunchUncheckedCreateInput, 'id' | 'receivedAt' | 'workDate'>;
@@ -30,7 +31,42 @@ export class PunchesService {
     private readonly recompute: RecomputeService,
     private readonly queue: RecomputeQueue,
     private readonly live: LiveGateway,
+    private readonly scope: ScopeService,
+    private readonly audit: AuditableActionService,
   ) {}
+
+  /** Manual punch (HR on the web, or a public-API key with punches:write): reason required, audited. */
+  async manual(user: AuthUser, dto: ManualPunchDto) {
+    const employee = await this.scope.assertOther(user, dto.employeeId);
+    const at = new Date(dto.at);
+    if (at.getTime() > Date.now() + 5 * 60_000) throw new AppError(400, 'FUTURE_PUNCH', 'A punch cannot be in the future');
+    const site = await this.prisma.site.findUniqueOrThrow({ where: { id: employee.siteId } });
+    // An off-day punch before the day boundary may belong to the previous day: check both.
+    const local = localYmd(at, site.timezone);
+    await assertPayrollOpen(this.prisma, user.tenantId, addDays(local, -1), local);
+    const punch = await this.record(
+      {
+        tenantId: user.tenantId,
+        siteId: employee.siteId,
+        employeeId: employee.id,
+        punchedAt: at,
+        source: 'MANUAL',
+        direction: dto.direction,
+        reason: dto.reason,
+        createdBy: user.sub,
+      },
+      employee,
+    );
+    await this.audit.log({
+      tenantId: user.tenantId,
+      actor: actorOf(user),
+      action: 'PUNCH_MANUAL',
+      targetType: 'Punch',
+      targetId: punch?.id,
+      payload: { employeeId: employee.id, at: dto.at, direction: dto.direction, reason: dto.reason },
+    });
+    return punch;
+  }
 
   /** @returns the inserted row, or null when it was a duplicate. */
   async record(input: PunchInput, employee?: Employee | null): Promise<Punch | null> {
@@ -47,15 +83,18 @@ export class PunchesService {
     const emp = employee ?? (punch.employeeId ? await this.prisma.employee.findUnique({ where: { id: punch.employeeId } }) : null);
     const site = await this.prisma.site.findUnique({ where: { id: punch.siteId } });
     const tz = site?.timezone ?? 'UTC';
+    let withNames = null;
     if (emp) {
       const workDate = await this.recompute.workDateFor(emp, punch.punchedAt, localYmd(punch.punchedAt, tz));
-      await this.prisma.punch.update({
+      // The update returns the row the live feed needs; no re-read.
+      withNames = await this.prisma.punch.update({
         where: { id_punchedAt: { id: punch.id, punchedAt: punch.punchedAt } },
         data: { workDate: dbDate(workDate) },
+        include: { employee: true, device: true },
       });
       await this.queue.day(emp.id, workDate);
     }
-    const withNames = await this.prisma.punch.findUnique({
+    withNames ??= await this.prisma.punch.findUnique({
       where: { id_punchedAt: { id: punch.id, punchedAt: punch.punchedAt } },
       include: { employee: true, device: true },
     });
@@ -156,32 +195,8 @@ export class PunchesController {
   /** Manual punch (HR, reason required, audited). */
   @Post()
   @Roles('ADMIN', 'HR')
-  async manual(@CurrentUser() user: AuthUser, @Body() dto: ManualPunchDto) {
-    const employee = await this.scope.assertEmployee(user, dto.employeeId);
-    const at = new Date(dto.at);
-    if (at.getTime() > Date.now() + 5 * 60_000) throw new AppError(400, 'FUTURE_PUNCH', 'A punch cannot be in the future');
-    const punch = await this.punches.record(
-      {
-        tenantId: user.tenantId,
-        siteId: employee.siteId,
-        employeeId: employee.id,
-        punchedAt: at,
-        source: 'MANUAL',
-        direction: dto.direction,
-        reason: dto.reason,
-        createdBy: user.sub,
-      },
-      employee,
-    );
-    await this.audit.log({
-      tenantId: user.tenantId,
-      actor: actorOf(user),
-      action: 'PUNCH_MANUAL',
-      targetType: 'Punch',
-      targetId: punch?.id,
-      payload: { employeeId: employee.id, at: dto.at, direction: dto.direction, reason: dto.reason },
-    });
-    return punch;
+  manual(@CurrentUser() user: AuthUser, @Body() dto: ManualPunchDto) {
+    return this.punches.manual(user, dto);
   }
 }
 

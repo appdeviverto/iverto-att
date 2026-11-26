@@ -1,0 +1,318 @@
+import { Body, CanActivate, Controller, ExecutionContext, HttpCode, Injectable, Logger, Post, UseInterceptors } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
+import { Prisma } from '@prisma/client';
+import { IsIn, IsISO8601, IsOptional, IsString, MaxLength } from 'class-validator';
+import { AuthUser, CurrentUser } from '../auth/auth.types';
+import { RecomputeQueue, RecomputeService } from '../attendance/recompute.service';
+import { EmployeesService } from '../employees/employees';
+import { AppError } from '../common/errors';
+import { featuresOf, forgetTenant, tenantState } from '../common/features';
+import { PrismaService } from '../common/prisma.service';
+import { RedisService } from '../common/redis.service';
+import { runAsSystem } from '../common/rls';
+import { addDays, dbDate, diffDays, eachDay, localYmd, weekday, Ymd, zonedInstant } from '../common/time';
+import { IsYmd } from '../common/validators';
+import { IdempotencyInterceptor } from '../mobile/idempotency';
+import { TENANT_DEFAULTS } from '../platform/tenant-defaults';
+import { PunchesService } from '../punches/punches';
+import { PublicApi } from './api-key.guard';
+import { PolicyService } from './policy';
+import { Op } from './registry';
+import { presentPunch } from './serializers';
+
+/**
+ * API sandbox orgs (docs/public-api.md §13). Every live org gets one SANDBOX tenant, created
+ * and seeded the first time an admin opens test mode. It is a real tenant, so RLS isolates it
+ * like any other; ivk_test_ keys resolve only to sandboxes and ivk_live_ keys only to live
+ * orgs. Sandboxes have no users and their employees have undeliverable addresses
+ * (`.invalid`), and NotificationsService refuses them, so nothing in a sandbox reaches a person.
+ */
+
+const SITES = ['Chennai HQ', 'Bengaluru Plant', 'Pune Office'];
+const DEPARTMENTS = [
+  { name: 'Engineering', code: 'ENG', titles: ['Software Engineer', 'Senior Engineer', 'QA Engineer'] },
+  { name: 'Sales', code: 'SAL', titles: ['Sales Executive', 'Account Manager'] },
+  { name: 'Operations', code: 'OPS', titles: ['Operator', 'Shift Supervisor', 'Technician'] },
+  { name: 'People', code: 'HR', titles: ['HR Executive'] },
+];
+const NAMES = [
+  'Aarav Mehta', 'Diya Nair', 'Kabir Rao', 'Ananya Iyer', 'Rohan Gupta', 'Isha Reddy', 'Vihaan Shah', 'Meera Pillai', 'Arjun Das',
+  'Sara Thomas', 'Aditya Kulkarni', 'Nisha Menon', 'Karan Joshi', 'Pooja Verma', 'Siddharth Bose', 'Kavya Hegde', 'Rahul Sinha',
+  'Tanvi Patil', 'Nikhil Chandra', 'Riya Kapoor', 'Varun Bhat', 'Sneha Kumar', 'Manav Arora', 'Lakshmi Rajan', 'Dev Malhotra',
+  'Priya Srinivasan', 'Yash Agarwal', 'Aditi Ghosh', 'Harish Murthy', 'Neha Saxena',
+];
+const HISTORY_DAYS = 30;
+const RESET_COOLDOWN_S = 300;
+
+/** Deterministic 0..1 from a string, so a re-seed produces the same history. */
+const rand = (seed: string) => {
+  let h = 2166136261;
+  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return ((h >>> 0) % 10_000) / 10_000;
+};
+const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
+@Injectable()
+export class SandboxService {
+  private readonly logger = new Logger(SandboxService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+    private readonly policies: PolicyService,
+    private readonly employees: EmployeesService,
+    private readonly punches: PunchesService,
+    private readonly recompute: RecomputeService,
+    private readonly queue: RecomputeQueue,
+  ) {}
+
+  /** The org's sandbox tenant id, or null. */
+  async find(parentTenantId: string): Promise<string | null> {
+    const t = await runAsSystem(() => this.prisma.tenant.findUnique({ where: { parentTenantId }, select: { id: true } }));
+    return t?.id ?? null;
+  }
+
+  /** The org's sandbox, created and seeded on first use. */
+  async ensure(parentTenantId: string): Promise<string> {
+    const existing = await this.find(parentTenantId);
+    if (existing) return existing;
+    const parent = await runAsSystem(() => this.prisma.tenant.findUnique({ where: { id: parentTenantId } }));
+    if (!parent || parent.kind !== 'LIVE' || parent.status !== 'ACTIVE') throw new AppError(403, 'SANDBOX_UNAVAILABLE', 'This organisation cannot have a sandbox');
+    const parentSettings = (parent.settings ?? {}) as Record<string, unknown>;
+    let tenantId: string;
+    try {
+      const t = await runAsSystem(() =>
+        this.prisma.tenant.create({
+          data: {
+            name: `${parent.name} (Sandbox)`,
+            slug: `sandbox-${parent.id}`,
+            status: 'ACTIVE',
+            kind: 'SANDBOX',
+            parentTenantId: parent.id,
+            createdBy: 'system:sandbox',
+            settings: {
+              ...TENANT_DEFAULTS.settings,
+              timezone: (parentSettings.timezone as string) ?? 'Asia/Kolkata',
+              features: featuresOf(parentSettings),
+            } as Prisma.InputJsonValue,
+          },
+        }),
+      );
+      tenantId = t.id;
+    } catch (err) {
+      // Two admins opened test mode at once: the unique parent_tenant_id let one through.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return (await this.find(parentTenantId))!;
+      throw err;
+    }
+    await this.seed(tenantId);
+    this.logger.log(`Sandbox ${tenantId} created for ${parentTenantId}`);
+    return tenantId;
+  }
+
+  /** Wipes a sandbox's business data (keys, webhooks and logs stay) and seeds it again. */
+  async reset(sandboxId: string) {
+    if ((await tenantState(this.prisma, sandboxId)).kind !== 'SANDBOX') throw new AppError(404, 'NOT_FOUND', 'Not found');
+    const ok = await this.redis.client.set(`api:sandbox-reset:${sandboxId}`, '1', 'EX', RESET_COOLDOWN_S, 'NX');
+    if (!ok) throw new AppError(429, 'RESET_TOO_SOON', `A sandbox can be reset once every ${RESET_COOLDOWN_S / 60} minutes`, { retryAfter: RESET_COOLDOWN_S });
+    // sandbox_wipe re-checks kind = SANDBOX on the locked tenant row and raises otherwise.
+    const [{ sandbox_wipe: deleted }] = await runAsSystem(() =>
+      this.prisma.$queryRaw<Array<{ sandbox_wipe: number }>>`SELECT public.sandbox_wipe(${sandboxId})`,
+    );
+    forgetTenant(sandboxId);
+    const seeded = await this.seed(sandboxId);
+    return { object: 'sandbox_reset', deletedRows: Number(deleted), ...seeded };
+  }
+
+  /** 3 sites, 4 departments, 30 employees, 30 days of punches, leave requests in every state. */
+  private async seed(tenantId: string) {
+    return runAsSystem(async () => {
+      const d = TENANT_DEFAULTS;
+      const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+      const tz = ((tenant.settings ?? {}) as Record<string, unknown>).timezone as string;
+      const { sites, depts, leaveTypes } = await this.prisma.$transaction(async (tx) => {
+        const calendar = await tx.holidayCalendar.create({ data: { tenantId, name: 'Sandbox holidays' } });
+        const sites = [];
+        for (const name of SITES) sites.push(await tx.site.create({ data: { tenantId, name, timezone: tz, holidayCalendarId: calendar.id } }));
+        const depts = await tx.department.createManyAndReturn({ data: DEPARTMENTS.map(({ name, code }) => ({ tenantId, name, code })) });
+        await tx.attendancePolicy.create({ data: { tenantId, ...d.policy } });
+        await tx.shift.create({ data: { tenantId, ...d.shift } });
+        const leaveTypes = await tx.leaveType.createManyAndReturn({ data: d.leaveTypes.map((lt) => ({ tenantId, active: true, ...lt })) });
+        return { sites, depts, leaveTypes };
+      });
+
+      const today = localYmd(new Date(), tz);
+      const system = { sub: 'system:sandbox', email: '', tenantId, role: 'ADMIN', employeeId: null, siteIds: [], isSuperAdmin: false, mustChangePassword: false, aal: 'aal2' } as unknown as AuthUser;
+      const people = [];
+      for (const [i, fullName] of NAMES.entries()) {
+        const dept = DEPARTMENTS[i % DEPARTMENTS.length];
+        people.push(
+          await this.employees.create(
+            system,
+            {
+              employeeCode: `SBX${String(i + 1).padStart(4, '0')}`,
+              fullName,
+              siteId: sites[i % sites.length].id,
+              departmentId: depts.find((x) => x.code === dept.code)!.id,
+              designation: dept.titles[i % dept.titles.length],
+              email: `${fullName.toLowerCase().replace(/[^a-z]+/g, '.')}@sandbox.invalid`,
+              joinedOn: addDays(today, -400 - i * 7),
+            } as never,
+            { type: 'system' },
+          ),
+        );
+      }
+
+      // Weekdays only (Sunday off), ~6% absences, the third site is a two-way gate (direction "unknown").
+      const leaveDay = (i: number) => addDays(today, -10 - (i % 3));
+      const rows: Prisma.PunchCreateManyInput[] = [];
+      for (const [i, e] of people.entries()) {
+        const gate = sites.findIndex((s) => s.id === e.siteId);
+        for (const date of eachDay(addDays(today, -HISTORY_DAYS), addDays(today, -1))) {
+          if (weekday(date) === 0 || rand(`${e.employeeCode}${date}`) < 0.06 || (i < 3 && date === leaveDay(i))) continue;
+          const inAt = zonedInstant(date, hhmm(525 + Math.floor(rand(`in${e.employeeCode}${date}`) * 55)), tz); // 08:45–09:40
+          const outAt = zonedInstant(date, hhmm(1050 + Math.floor(rand(`out${e.employeeCode}${date}`) * 90)), tz); // 17:30–19:00
+          for (const [at, dir] of [[inAt, 'in'], [outAt, 'out']] as const) {
+            rows.push({ tenantId, siteId: e.siteId, employeeId: e.id, punchedAt: at, workDate: dbDate(date), source: 'TERMINAL', direction: gate === 2 ? 'unknown' : dir, outcome: 'GRANTED' });
+          }
+        }
+      }
+      await this.prisma.punch.createMany({ data: rows, skipDuplicates: true });
+
+      // Leave in every state: approved (past and future), pending, rejected, cancelled.
+      const cl = leaveTypes.find((t) => t.code === 'CL')!;
+      const nextWeekday = (from: Ymd, n: number) => {
+        let date = from;
+        for (let k = 0; k < n; ) if (weekday((date = addDays(date, 1))) !== 0) k++;
+        return date;
+      };
+      const leave = (i: number, date: Ymd, status: string, note?: string) => ({
+        tenantId,
+        employeeId: people[i].id,
+        leaveTypeId: cl.id,
+        startDate: dbDate(date),
+        endDate: dbDate(date),
+        days: new Prisma.Decimal(1),
+        reason: 'Personal work',
+        status,
+        decidedAt: status === 'PENDING' ? null : new Date(),
+        decisionNote: note ?? null,
+        createdBy: 'system:sandbox',
+      });
+      await this.prisma.leaveRequest.createMany({
+        data: [
+          ...[0, 1, 2].map((i) => leave(i, leaveDay(i), 'APPROVED')),
+          leave(3, nextWeekday(today, 3), 'APPROVED'),
+          leave(4, nextWeekday(today, 4), 'PENDING'),
+          leave(5, nextWeekday(today, 5), 'PENDING'),
+          leave(6, nextWeekday(today, 6), 'REJECTED', 'Quarter-end freeze'),
+          leave(7, nextWeekday(today, 7), 'CANCELLED'),
+        ],
+      });
+
+      // The engine builds the days; the finalise cron closes the past ones (attendance.day.finalized).
+      await this.queue.bulk({ tenantId, from: addDays(today, -HISTORY_DAYS), to: addDays(today, 14), rematerialise: true });
+      return { sites: sites.length, employees: people.length, punches: rows.length, leaveRequests: 8 };
+    });
+  }
+
+  /** A terminal punch, as the M50 would record it: same insert, recompute and punch.created event. */
+  async simulatePunch(user: AuthUser, dto: SimulatePunchDto) {
+    const employee = await this.prisma.employee.findFirst({ where: { id: dto.employeeId, tenantId: user.tenantId } });
+    if (!employee) throw new AppError(404, 'NOT_FOUND', 'Employee not found');
+    const at = dto.punchedAt ? new Date(dto.punchedAt) : new Date();
+    if (at.getTime() > Date.now() + 5 * 60_000) throw new AppError(400, 'FUTURE_PUNCH', 'A punch cannot be in the future');
+    const punch = await this.punches.record(
+      { tenantId: user.tenantId, siteId: employee.siteId, employeeId: employee.id, punchedAt: at, source: 'TERMINAL', direction: dto.direction ?? 'unknown', outcome: 'GRANTED' },
+      employee,
+    );
+    if (!punch) throw new AppError(409, 'DUPLICATE', 'This punch was already recorded');
+    return presentPunch(punch);
+  }
+
+  /** Closes every employee's day for `date` now instead of when its window ends (attendance.day.finalized). */
+  async closeDay(user: AuthUser, date: Ymd) {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
+    const today = localYmd(new Date(), ((tenant.settings ?? {}) as Record<string, unknown>).timezone as string);
+    if (diffDays(date, today) < 0) throw new AppError(400, 'FUTURE_DATE', 'Only today or an earlier day can be closed');
+    if (diffDays(date, today) > 93) throw new AppError(400, 'RANGE_TOO_LARGE', 'Only the last 93 days can be closed');
+    const employees = await this.prisma.employee.findMany({ where: { tenantId: user.tenantId, status: 'ACTIVE' }, select: { id: true } });
+    let finalized = 0;
+    for (const e of employees) {
+      const day = await this.recompute.recompute(e.id, date, { type: 'system' }, { closeNow: true });
+      if (day?.finalizedAt) finalized++;
+    }
+    return { object: 'sandbox_close_day', date, finalized };
+  }
+}
+
+export class SimulatePunchDto {
+  @IsString() @MaxLength(64) employeeId: string;
+  /** RFC 3339; default now. A past time behaves like a buffered terminal upload. */
+  @IsOptional() @IsISO8601({ strict: true }) punchedAt?: string;
+  @IsOptional() @IsIn(['in', 'out', 'unknown']) direction?: 'in' | 'out' | 'unknown';
+}
+
+export class CloseDayDto {
+  @IsYmd() date: string;
+}
+
+/** Simulation endpoints; the guard refuses them for live keys (registry `sandboxOnly`). */
+@ApiExcludeController()
+@PublicApi()
+@UseInterceptors(IdempotencyInterceptor)
+@Controller('public/sandbox')
+export class SandboxV1Controller {
+  constructor(private readonly sandbox: SandboxService) {}
+
+  @Post('punches')
+  @Op('sandbox.punches.create')
+  simulatePunch(@CurrentUser() user: AuthUser, @Body() dto: SimulatePunchDto) {
+    return this.sandbox.simulatePunch(user, dto);
+  }
+
+  @Post('attendance/close-day')
+  @HttpCode(200)
+  @Op('sandbox.attendance.close_day')
+  closeDay(@CurrentUser() user: AuthUser, @Body() dto: CloseDayDto) {
+    return this.sandbox.closeDay(user, dto.date);
+  }
+
+  @Post('reset')
+  @HttpCode(200)
+  @Op('sandbox.reset')
+  reset(@CurrentUser() user: AuthUser) {
+    return this.sandbox.reset(user.tenantId);
+  }
+}
+
+/**
+ * Org admin screens in test mode (`X-Api-Env: test`): keys, webhooks, logs and usage then act
+ * on the org's sandbox. Swaps the caller's tenant before the RLS interceptor runs, so every
+ * query, insert and audit row lands in the sandbox. Platform staff may look but never create one.
+ */
+@Injectable()
+export class SandboxModeGuard implements CanActivate {
+  constructor(
+    private readonly sandbox: SandboxService,
+    private readonly policies: PolicyService,
+  ) {}
+
+  async canActivate(context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest();
+    const env = req.headers['x-api-env'];
+    if (env === undefined || env === 'live') return true;
+    if (env !== 'test') throw new AppError(400, 'BAD_API_ENV', 'X-Api-Env must be live or test');
+    const user = req.user as AuthUser;
+    if (!user?.tenantId || user.role !== 'ADMIN') throw new AppError(403, 'FORBIDDEN', 'Your role does not allow this');
+    let id = await this.sandbox.find(user.tenantId);
+    if (!id) {
+      if (user.isSuperAdmin) throw new AppError(404, 'SANDBOX_NOT_FOUND', 'This organisation has not opened test mode yet');
+      if (!(await this.policies.forTenant(user.tenantId)).policy.enabled) {
+        throw new AppError(403, 'API_DISABLED', 'API access is not enabled for your organisation; contact Iverto');
+      }
+      id = await this.sandbox.ensure(user.tenantId);
+    }
+    req.user = { ...user, tenantId: id, siteIds: [] } satisfies AuthUser;
+    return true;
+  }
+}

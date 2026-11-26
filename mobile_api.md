@@ -97,7 +97,9 @@ GET /v1/mobile/me
     "teamView": false,
     "remoteWork": true,
     "leave": true,
-    "fieldVisits": true
+    "fieldVisits": true,
+    "hr": true,
+    "payroll": true
   }
 }
 ```
@@ -106,6 +108,7 @@ GET /v1/mobile/me
 - `features.leave` is `false` for a login without an employee record, and for **interns** when the organisation has the interns setting on (interns have no leave). Hide the leave tab then; leave routes return `400 NO_LEAVE_FOR_INTERNS`.
 - `features.mobilePunch` is `NEVER`, `REMOTE_DAYS`, `ALWAYS` or `FULL_REMOTE` (fully remote employee: may always punch from the app, and every working day counts as remote).
 - `features.fieldVisits`: show the field-visit button (§7A).
+- `features.hr` / `features.payroll`: the organisation's paid modules. When `false`, hide the matching §12 screens (documents, expenses, announcements, assets, tasks and the org chart for HR; payslips for payroll). Their routes answer `403 FEATURE_DISABLED`, and the app should re-read `/me` when it gets one, because a module can be switched off at any time.
 
 #### Two-factor sign-in is web-only
 The web app requires an authenticator-app code at every sign-in. The mobile app does **not**: every `/v1/mobile/*` route, plus `GET /v1/org`, `GET /v1/departments` and `GET /v1/attendance/overview` (leaderboard, §10.6), accept a password-only session. Any other `/v1` route returns `403 MFA_REQUIRED` to a mobile token, so don't call web routes beyond those.
@@ -710,18 +713,18 @@ Allows employees to propose in/out times for days with missed punches or hardwar
   "reason": "Terminal was offline during morning entry"
 }
 ```
-- `fieldVisitId` (optional): attach one of **your own** field visits (§7A) as proof, e.g. the visit taken at the client's when you left. Someone else's visit, or an unknown id → `400 BAD_PROOF`.
+- `fieldVisitIds` (optional, up to 10): attach **your own** field visits (§7A) as proof, e.g. one per client visited that day. Any visit that is someone else's, or an unknown id → `400 BAD_PROOF`. Older builds may still send a single `fieldVisitId`; it is treated as a one-item list.
 
 ```json
 {
   "date": "2026-03-27",
   "out": "18:10",
   "reason": "Went to Acme Ltd after lunch and left from there",
-  "fieldVisitId": "fv-31"
+  "fieldVisitIds": ["fv-31", "fv-32"]
 }
 ```
 
-Corrections returned by §7.1 and the approvals queue carry `fieldVisit` (`null` when no proof was attached), with the same fields as §7A plus a fresh 1-hour `photoUrl`.
+Corrections returned by §7.1 and the approvals queue carry `fieldVisits` (oldest first, `[]` when no proof was attached), each with the same fields as §7A plus a fresh 1-hour `photoUrl`. `fieldVisit` (the first of them, or `null`) is kept for older builds; new code should read `fieldVisits`.
 
 #### Response `201 Created`
 ```json
@@ -741,7 +744,7 @@ Corrections returned by §7.1 and the approvals queue carry `fieldVisit` (`null`
 
 For staff who leave the office during the day for a client's site and go home from there without punching out on the terminal. A **field visit** is a selfie + GPS fix + **server** timestamp taken in the app, kept as proof that the person was working at that place and time. It is **not** a punch and never changes attendance on its own. Later, the employee requests a correction (§7.2) and attaches the visit as proof; the approver sees the photo on a map on the web before approving.
 
-Show the feature when `/me` → `features.fieldVisits` is `true` (any login linked to an employee). Suggested UI: a "Field visit" button on the home screen, and a "Proof" picker on the correction form listing that day's visits.
+Show the feature when `/me` → `features.fieldVisits` is `true` (any login linked to an employee). Suggested UI: a "Field visit" button on the home screen, and a "Proof" multi-select on the correction form listing that day's visits (thumbnail + time + note, tick up to 10).
 
 ### 7A.1 Record a Field Visit
 ```http
@@ -1153,3 +1156,68 @@ Approvers: in two-level flows a manager's approve returns `status: "PENDING"` (p
 
 - If the employee's site has a geofence, `POST /v1/mobile/punches` inside the radius (and `isMockLocation` not `true`) comes back `reviewStatus: "APPROVED"` with `reviewNote: "Auto-approved: 14 m from <site>"`. Outside it is `PENDING` (`reviewNote: "Outside geofence: 850 m from <site>"`) for a manager — or, on a **strict** site, refused with `403 OUTSIDE_GEOFENCE` (message says how far away they are). Show the distance hint before punching using `mobilePunch.geofence` from `GET /v1/mobile/today`.
 - Any number of in/out sessions per day are counted. `GET /v1/mobile/today` → `mobilePunch.nextDirection` (`in` | `out`) is the opposite of the last counted punch: drive the punch button from it instead of assuming one in and one out per day.
+
+---
+
+## 12. HR & Payroll in the App (Nov 2026)
+
+All under `/v1/mobile`, reachable with the app's password-only session. Everything is the signed-in employee's own data. Money is in rupees.
+
+### 12.1 My profile & change requests
+```http
+GET  /v1/mobile/profile
+GET  /v1/mobile/profile/requests
+POST /v1/mobile/profile/requests        { "changes": { "currentAddress": "...", "bankIfsc": "HDFC0001234" }, "reason": "Moved house" }
+POST /v1/mobile/profile/requests/:id/cancel
+```
+`GET /profile` returns:
+- `employee`: the full record, including the employee's own PAN, UAN, ESIC and bank details
+- `editable`: the field keys they may request changes to
+- `pendingRequest`
+
+Changes apply only when HR approves (push `PROFILE_CHANGE_APPROVED` / `PROFILE_CHANGE_REJECTED`). One request can be pending at a time (`409 PENDING_REQUEST`). For Aadhaar, send only the last 4 digits (`aadhaarLast4`).
+
+### 12.2 Documents
+```http
+GET  /v1/mobile/documents
+POST /v1/mobile/documents     { "category": "ID_PROOF", "name": "Aadhaar card", "expiresOn": null, "fileName": "aadhaar.jpg", "contentType": "image/jpeg", "dataBase64": "..." }
+GET  /v1/mobile/documents/:id/url      → { url, expiresInSeconds: 300 }
+```
+Categories: `ID_PROOF`, `ADDRESS_PROOF`, `EDUCATION`, `EXPERIENCE`, `CONTRACT`, `OTHER`. Generated letters appear here as `LETTER`. Files are JPEG, PNG or PDF, at most 5 MB. Open the link at once; it expires in 5 minutes.
+
+### 12.3 Payslips
+```http
+GET /v1/mobile/payslips              [{ id, month, monthName, periodStart, periodEnd, paidAt, gross, deductions, net }]
+GET /v1/mobile/payslips/:id          lines: [{ code, name, kind: EARNING|REIMBURSEMENT|DEDUCTION|EMPLOYER, amount }], attendance (paid days, LOP, OT)
+GET /v1/mobile/payslips/:id/pdf      application/pdf (attachment)
+```
+Only paid months are listed. A push `PAYSLIP_READY { runId, month }` arrives when one is paid.
+
+### 12.4 Expense claims
+```http
+GET  /v1/mobile/expense-categories
+GET  /v1/mobile/expenses?status=&cursor=&limit=
+POST /v1/mobile/expenses   { "category": "Travel", "amount": 1250.50, "claimDate": "2026-11-12", "description": "Cab to client", "receiptBase64": "...", "receiptType": "image/jpeg", "fieldVisitId": "<optional>" }
+POST /v1/mobile/expenses/:id/cancel
+```
+Each claim has `progress` (the same approval tracker as leave, §11.3), `receiptUrl`, and `reimbursed`.
+
+Managers use the shared approvals queue:
+- list with `GET /v1/mobile/approvals?type=expense`
+- decide with `POST /v1/mobile/approvals/expense/:id/approve` or `…/reject` (a reason is required)
+
+Push types: `EXPENSE_SUBMITTED` (to approvers), `EXPENSE_MANAGER_APPROVED`, `EXPENSE_APPROVED`, `EXPENSE_REJECTED`.
+
+### 12.5 Announcements, assets, tasks, org chart
+```http
+GET  /v1/mobile/announcements                 published ones that reach me; requiresAck, ackAt
+POST /v1/mobile/announcements/:id/ack
+GET  /v1/mobile/assets                        company assets assigned to me
+GET  /v1/mobile/tasks                         my checklist items (e.g. "Read and sign the appointment letter")
+POST /v1/mobile/tasks/:id/done               { "note": "optional" }
+GET  /v1/mobile/org-chart                     [{ id, employeeCode, fullName, designation, managerId, department, site }]
+```
+Push `ANNOUNCEMENT { id, requiresAck: "true"|"false" }` arrives on publish. `DOCUMENT_EXPIRING` arrives 30 and 7 days before one of my documents expires.
+
+### 12.6 Payroll lock
+Once HR closes a pay period, changes to attendance inside it return **`409 PAYROLL_LOCKED`**: corrections, leave (apply, or cancel an approved one) and remote work. The message names the period. Show it as is: the employee should ask HR, who settles it in the next month's pay.

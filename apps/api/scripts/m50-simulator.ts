@@ -338,7 +338,9 @@ ws.on('message', (data) => {
       console.error(
         `\nRegister refused. The serial must be provisioned first:\n` +
           `  POST /v1/tenants/{tenantId}/terminals {"serialNo":"${SERIAL}", ...}\n` +
-          `and CloudId must match M50_CLOUD_ID if that is set.`,
+          `and CloudId must match M50_CLOUD_ID if that is set. An already-registered serial needs
+` +
+          `POST /v1/terminals/{id}/rearm first (unless M50_CLOUD_ID is set).`,
       );
       return ws.close();
     }

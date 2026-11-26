@@ -2,11 +2,12 @@ import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/commo
 import { Reflector } from '@nestjs/core';
 import * as jose from 'jose';
 import { AppError } from '../common/errors';
+import { Feature, FEATURE_KEY, FEATURE_LABEL, tenantState } from '../common/features';
 import { PrismaService } from '../common/prisma.service';
 import { runAsSystem } from '../common/rls';
 import { ALLOW_PENDING_PASSWORD, AuthUser, IS_PUBLIC, ROLES, ROLES_KEY, Role, SKIP_MFA } from './auth.types';
 
-const TENANT_STATUS_TTL_MS = 60_000;
+export { forgetTenant } from '../common/features';
 
 /**
  * Verifies Supabase access tokens against the project JWKS (asymmetric keys
@@ -17,7 +18,6 @@ const TENANT_STATUS_TTL_MS = 60_000;
 export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
   private jwks?: jose.JWTVerifyGetKey;
-  private readonly tenantStatus = new Map<string, { status: string; at: number }>();
 
   constructor(
     private readonly reflector: Reflector,
@@ -88,6 +88,10 @@ export class JwtAuthGuard implements CanActivate {
     if (required?.length && !required.includes(user.role)) {
       throw new AppError(403, 'FORBIDDEN', 'Your role does not allow this');
     }
+    const feature = meta<Feature>(FEATURE_KEY);
+    if (feature && user.tenantId && !(await this.tenantOf(user.tenantId)).features[feature]) {
+      throw new AppError(403, 'FEATURE_DISABLED', `${FEATURE_LABEL[feature]} isn't enabled for this organisation`, { feature });
+    }
     return true;
   }
 
@@ -112,15 +116,12 @@ export class JwtAuthGuard implements CanActivate {
     };
   }
 
-  /** Cached for a minute, so a suspension bites within 60 s (§13.1). */
   async statusOf(tenantId: string): Promise<string> {
-    const hit = this.tenantStatus.get(tenantId);
-    if (hit && Date.now() - hit.at < TENANT_STATUS_TTL_MS) return hit.status;
-    const tenant = await runAsSystem(async () =>
-      this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { status: true } }),
-    );
-    const status = tenant?.status ?? 'MISSING';
-    this.tenantStatus.set(tenantId, { status, at: Date.now() });
-    return status;
+    return (await this.tenantOf(tenantId)).status;
+  }
+
+  /** Cached for a minute, so a suspension or a module switched off bites within 60 s (§13.1). */
+  private tenantOf(tenantId: string) {
+    return tenantState(this.prisma, tenantId);
   }
 }

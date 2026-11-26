@@ -64,6 +64,15 @@ export class TerminalRegistryService {
       return;
     }
 
+    // Knowing a serial (printed on the unit, shown on punches) must not let anyone mint a token and knock the
+    // real terminal off. A registered device may re-register only when it proved M50_CLOUD_ID above; without
+    // that secret an admin re-arms it after a factory reset (POST /terminals/:id/rearm), which clears the token.
+    if (device.terminalToken && !expectedCloudId) {
+      this.logger.warn(`Register rejected for ${serialNo} from ${session.remoteAddress}: already registered (re-arm it to allow)`);
+      session.send({ Response: 'Register', DeviceSerialNo: serialNo, Result: 'Fail' });
+      return;
+    }
+
     const token = randomUUID();
     await this.audit.run({
       action: 'TERMINAL_REGISTER',
@@ -72,7 +81,7 @@ export class TerminalRegistryService {
       actor: { type: 'device', deviceId: device.id },
       tenantId: device.tenantId,
       siteId: device.siteId,
-      payloadFrom: () => ({ serialNo, terminalType, rotated: Boolean(device.terminalToken) }),
+      payloadFrom: () => ({ serialNo, terminalType }),
       run: (tx) =>
         tx.device.update({
           where: { id: device.id },

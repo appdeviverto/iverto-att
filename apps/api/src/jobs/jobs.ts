@@ -10,9 +10,17 @@ import { runAsSystem } from '../common/rls';
 import { BUCKETS, SupabaseService } from '../common/supabase.service';
 import { addDays, localYmd, ymdOf } from '../common/time';
 import { EmployeesModule, EmployeesService } from '../employees/employees';
+import { DocumentsService } from '../hr/documents';
+import { HrModule } from '../hr/hr.module';
 import { LeaveModule, LeaveService } from '../leave/leave';
 import { LiveGateway } from '../live/live.gateway';
 import { NotificationsService } from '../notifications/notifications';
+import { PolicyService } from '../public-api/policy';
+import { WebhookAdminService } from '../public-api/webhooks';
+import { ApiAlertsService } from '../public-api/alerts';
+import { ApiJobsService } from '../public-api/jobs';
+import { PublicApiModule } from '../public-api/public-api.module';
+import { TOMBSTONE_DAYS } from '../public-api/sync';
 import { ReportsModule, ReportsService } from '../reports/reports';
 
 export const CRON_QUEUE = 'cron';
@@ -29,6 +37,9 @@ const SCHEDULES: Record<string, number> = {
   'terminal-offboard-retry': 60 * 60_000,
   'device-watchdog': 5 * 60_000,
   retention: 24 * 60 * 60_000,
+  'document-expiry': 24 * 60 * 60_000,
+  'api-alerts': 60 * 60_000,
+  'api-alerts-digest': 24 * 60 * 60_000,
 };
 
 const HORIZON_DAYS = 14;
@@ -49,6 +60,11 @@ export class JobsService {
     private readonly supabase: SupabaseService,
     private readonly blobs: AzureBlobService,
     private readonly notifications: NotificationsService,
+    private readonly documents: DocumentsService,
+    private readonly apiPolicies: PolicyService,
+    private readonly webhooks: WebhookAdminService,
+    private readonly apiJobs: ApiJobsService,
+    private readonly apiAlerts: ApiAlertsService,
   ) {}
 
   /**
@@ -163,6 +179,12 @@ export class JobsService {
       }
     }
     await this.reports.purgeExpired();
+    // Public API request logs (platform retention) and sync tombstones (public-api/sync.ts TOMBSTONE_DAYS).
+    const { logRetentionDays } = await this.apiPolicies.platform();
+    await this.prisma.$transaction((tx) => tx.$executeRaw`SELECT api_purge(${logRetentionDays}::int, ${TOMBSTONE_DAYS}::int)`);
+    await this.webhooks.purge();
+    await this.apiJobs.purge();
+    await this.apiAlerts.purge();
   }
 
   run(name: string) {
@@ -181,6 +203,12 @@ export class JobsService {
         return this.watchdog();
       case 'retention':
         return this.retention();
+      case 'api-alerts':
+        return this.apiAlerts.run();
+      case 'api-alerts-digest':
+        return this.apiAlerts.digest();
+      case 'document-expiry':
+        return this.documents.notifyExpiring();
       default:
         this.logger.warn(`Unknown cron job ${name}`);
     }
@@ -216,7 +244,7 @@ export class CronProcessor extends WorkerHost implements OnApplicationBootstrap 
 }
 
 @Module({
-  imports: [BullModule.registerQueue({ name: CRON_QUEUE }), LeaveModule, EmployeesModule, ReportsModule],
+  imports: [BullModule.registerQueue({ name: CRON_QUEUE }), LeaveModule, EmployeesModule, ReportsModule, HrModule, PublicApiModule],
   providers: [JobsService, CronProcessor],
 })
 export class JobsModule {}

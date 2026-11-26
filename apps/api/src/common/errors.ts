@@ -35,6 +35,8 @@ function fromDatabase(err: any): { status: number; code: string; message: string
   if (err?.code === 'P2025') return { status: 404, code: 'NOT_FOUND', message: 'Record not found' };
   if (sqlState === '23P01') return { status: 409, code: 'OVERLAP', message: 'Overlaps an existing request or schedule for this employee' };
   if (sqlState === '23514') return { status: 400, code: 'CONSTRAINT_FAILED', message: 'Value rejected by a database constraint' };
+  // Row-level security refused the write (e.g. a site-restricted user moving a row out of their sites).
+  if (sqlState === '42501') return { status: 403, code: 'FORBIDDEN', message: 'Outside your access' };
   if (err?.code === 'P2003' || sqlState === '23503') return { status: 400, code: 'INVALID_REFERENCE', message: 'Referenced record does not exist' };
   return null;
 }
@@ -72,14 +74,36 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     } else {
       const db = fromDatabase(exception);
+      const fastifyStatus = (exception as any)?.statusCode;
       if (db) {
         ({ status, code, message } = db);
         this.logger.warn(`Database error ${code}: ${(exception as any)?.message}`, (exception as any)?.stack);
+      } else if (Number.isInteger(fastifyStatus) && fastifyStatus >= 400 && fastifyStatus < 500) {
+        // Fastify plugin errors (rate limit → 429) carry their own status.
+        status = fastifyStatus;
+        code = STATUS_CODES[status] ?? 'ERROR';
+        message = (exception as Error)?.message ?? message;
       } else {
         this.logger.error((exception as Error)?.message, (exception as Error)?.stack);
       }
     }
 
+    // The developer API speaks RFC 9457 problem+json (docs/public-api.md §3); `code` is the stable contract.
+    const apiCtx = host.switchToHttp().getRequest()?.apiCtx as { requestId: string } | undefined;
+    if (apiCtx) {
+      reply
+        .status(status)
+        .header('content-type', 'application/problem+json; charset=utf-8')
+        .send({
+          type: `https://developers.iverto.ai/errors/${code}`,
+          title: message,
+          status,
+          code,
+          requestId: apiCtx.requestId,
+          errors: details ?? null,
+        });
+      return;
+    }
     reply.status(status).send({ statusCode: status, code, message, ...(details !== undefined && { details }) });
   }
 }

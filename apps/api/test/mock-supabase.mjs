@@ -25,6 +25,19 @@ http.createServer(async (req, res) => {
   const p = url.pathname;
   const raw = await body(req);
   const data = raw.length && (req.headers['content-type'] || '').includes('json') ? JSON.parse(raw) : null;
+  // The web app (supabase-js in a browser) signs in against this mock too.
+  res.setHeader('access-control-allow-origin', req.headers.origin || '*');
+  res.setHeader('access-control-allow-headers', req.headers['access-control-request-headers'] || '*');
+  res.setHeader('access-control-allow-methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+  if (p === '/auth/v1/user') {
+    try {
+      const { payload } = await jose.jwtVerify((req.headers.authorization || '').replace(/^Bearer /, ''), publicKey);
+      const u = users.get(payload.sub);
+      return u ? json(res, 200, { ...pub(u), factors: [] }) : json(res, 404, { msg: 'User not found' });
+    } catch { return json(res, 401, { msg: 'invalid JWT' }); }
+  }
+  if (p === '/auth/v1/logout') { res.writeHead(204); return res.end(); }
   if (p === '/auth/v1/.well-known/jwks.json') return json(res, 200, { keys: [jwk] });
   if (p === '/auth/v1/admin/users' && req.method === 'POST') {
     if ([...users.values()].some((u) => u.email === data.email)) return json(res, 422, { code: 422, msg: 'A user with this email address has already been registered', error_code: 'email_exists' });
@@ -46,9 +59,12 @@ http.createServer(async (req, res) => {
     }
   }
   if (p === '/auth/v1/token') {
-    const u = [...users.values()].find((x) => x.email === data.email && x.password === data.password && !x.banned);
-    if (!u) return json(res, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials' });
-    return json(res, 200, { access_token: await token(u), token_type: 'bearer', expires_in: 3600, refresh_token: 'r', user: pub(u) });
+    // refresh_token = the user id, so a browser session renews itself past the 1-hour token.
+    const u = url.searchParams.get('grant_type') === 'refresh_token'
+      ? users.get(data?.refresh_token)
+      : [...users.values()].find((x) => x.email === data.email && x.password === data.password && !x.banned);
+    if (!u || u.banned) return json(res, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials' });
+    return json(res, 200, { access_token: await token(u), token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: u.id, user: pub(u) });
   }
   // test helper: set a password without the API (to seed)
   if (p === '/test/users') return json(res, 200, [...users.values()]);

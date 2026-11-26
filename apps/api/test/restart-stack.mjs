@@ -47,6 +47,10 @@ const env = {
   SUPABASE_URL: 'http://localhost:54321',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-test',
   SUPABASE_JWKS_URL: 'http://localhost:54321/auth/v1/.well-known/jwks.json',
+  // Public API key HMAC pepper (test value only).
+  API_KEY_PEPPER: 'local-test-pepper-not-a-secret-0123456789abcdef',
+  // Lets webhooks reach a receiver on localhost (test/e2e-webhooks.mjs); refused when NODE_ENV=production.
+  WEBHOOK_ALLOW_PRIVATE_TARGETS: 'true',
   // Azurite on its default ports (npx azurite-blob).
   AZURE_STORAGE_CONNECTION_STRING: process.env.AZURE_STORAGE_CONNECTION_STRING || 'UseDevelopmentStorage=true',
 };

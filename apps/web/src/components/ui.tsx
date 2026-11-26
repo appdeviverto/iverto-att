@@ -30,14 +30,27 @@ export function DepartmentSelect({ value, onChange }: { value: string; onChange:
   );
 }
 
+/** At or below this many options there is nothing to search: a native select, whose popup is never clipped by a modal. */
+const NATIVE_MAX = 8;
+
 /**
  * The dropdown for modal forms: a type-to-search combobox (core-ui SearchSelect) in a labelled Field.
  * Takes Select-style options. `placeholder` doubles as the meaning of "nothing picked" ("No department").
+ * Short fixed lists (kind, type, role…) render as a native select instead: SearchSelect's list is an
+ * absolutely-positioned box that a scrolling modal body clips.
  */
 export function Pick({ label, value, onChange, options, placeholder, required, hint, avatar = false, emptyText }: {
   label: ReactNode; value: string; onChange: (v: string) => void; options: (SelectOption & { description?: string; keywords?: string })[];
   placeholder?: string; required?: boolean; hint?: ReactNode; avatar?: boolean; emptyText?: string;
 }) {
+  if (!avatar && options.length > 0 && options.length <= NATIVE_MAX) {
+    return (
+      <Select label={label} hint={hint} required={required} value={value} onChange={(e) => onChange(e.target.value)}
+        // Keep an empty choice when nothing is picked yet, or when "nothing" is a valid answer ("No department").
+        placeholder={!value || placeholder ? (placeholder && placeholder !== 'Search…' ? placeholder : 'Choose…') : undefined}
+        options={options.map((o) => ({ value: o.value, label: o.description ? `${o.label} — ${o.description}` : o.label, disabled: o.disabled }))} />
+    );
+  }
   return (
     <Field label={label} required={required} hint={hint}>
       {({ id }) => (
@@ -57,6 +70,80 @@ export function EmployeePicker({ value, onChange, label = 'Employee', required }
   return (
     <Pick label={label} required={required} avatar placeholder="Search by name or code" value={value} onChange={onChange}
       options={(data?.items ?? []).map((e) => ({ value: e.id, label: e.fullName, description: e.employeeCode, keywords: e.email ?? '' }))} />
+  );
+}
+
+/**
+ * Pick several employees: a summary button that opens an inline list (search, Select all for what is
+ * shown, site/department filters). Inline rather than a floating popup, so a modal never clips it.
+ */
+export function EmployeeMultiPicker({ value, onChange, label = 'Employees', required }: { value: string[]; onChange: (ids: string[]) => void; label?: string; required?: boolean }) {
+  const employees = useEmployeeOptions().data?.items ?? [];
+  const sites = useSites().data ?? [];
+  const departments = useDepartments().data ?? [];
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [siteId, setSiteId] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const chosen = new Set(value);
+  const shown = employees.filter((e) =>
+    (!siteId || e.siteId === siteId) && (!departmentId || e.departmentId === departmentId) &&
+    (!q || `${e.fullName} ${e.employeeCode} ${e.email ?? ''}`.toLowerCase().includes(q.toLowerCase())));
+  const allShown = shown.length > 0 && shown.every((e) => chosen.has(e.id));
+  const toggleAll = () => onChange(allShown ? value.filter((id) => !shown.some((e) => e.id === id)) : [...new Set([...value, ...shown.map((e) => e.id)])]);
+  const toggle = (id: string) => onChange(chosen.has(id) ? value.filter((x) => x !== id) : [...value, id]);
+  const names = employees.filter((e) => chosen.has(e.id)).map((e) => e.fullName);
+  const summary = !names.length ? 'Choose employees' : names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
+
+  return (
+    <Field label={label} required={required} hint={value.length ? `${value.length} selected` : undefined}>
+      {({ id }) => (
+        <div className="relative">
+          <button id={id} type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+            className="field flex w-full items-center justify-between gap-2 text-left">
+            <span className={`truncate ${names.length ? 'text-fg' : 'text-fg-subtle'}`}>{summary}</span>
+            <span className="flex shrink-0 items-center gap-2">
+              {value.length > 0 && <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs font-semibold text-brand">{value.length}</span>}
+              <span className={`text-fg-subtle transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+            </span>
+          </button>
+          {required && <input tabIndex={-1} aria-hidden required value={value.length ? 'x' : ''} onChange={() => {}} className="pointer-events-none absolute inset-x-0 bottom-0 h-px opacity-0" />}
+          {open && (
+            <div className="mt-2 overflow-hidden rounded-2xl border border-line bg-surface-raised shadow-soft">
+              <div className="space-y-2 border-b border-line-soft p-3">
+                <TextField hideLabel label="Search employees" placeholder="Search name or code" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+                <div className="grid grid-cols-2 gap-2">
+                  <Select hideLabel label="Site" placeholder="All sites" value={siteId} onChange={(e) => setSiteId(e.target.value)} options={sites.map((s) => ({ value: s.id, label: s.name }))} />
+                  <Select hideLabel label="Department" placeholder="All departments" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} options={departments.map((d) => ({ value: d.id, label: d.name }))} />
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-3 border-b border-line-soft bg-surface-subtle px-4 py-2.5 text-sm font-semibold text-fg">
+                <input type="checkbox" className="size-4 accent-[var(--color-brand)]" checked={allShown} onChange={toggleAll} disabled={!shown.length} />
+                Select all{q || siteId || departmentId ? ' shown' : ''} ({shown.length})
+                {value.length > 0 && <button type="button" className="ml-auto text-xs font-semibold text-brand hover:underline" onClick={(e) => { e.preventDefault(); onChange([]); }}>Clear</button>}
+              </label>
+              <ul className="max-h-64 overflow-y-auto py-1">
+                {shown.map((e) => (
+                  <li key={e.id}>
+                    <label className="flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-surface-subtle">
+                      <input type="checkbox" className="size-4 accent-[var(--color-brand)]" checked={chosen.has(e.id)} onChange={() => toggle(e.id)} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-fg">{e.fullName}</span>
+                        <span className="block truncate text-xs text-fg-muted">{e.employeeCode}</span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+                {!shown.length && <li className="px-4 py-3 text-sm text-fg-muted">No one matches</li>}
+              </ul>
+              <div className="flex justify-end border-t border-line-soft px-3 py-2">
+                <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>Done</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Field>
   );
 }
 

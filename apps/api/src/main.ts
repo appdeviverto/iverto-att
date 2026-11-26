@@ -4,7 +4,10 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import Redis from 'ioredis';
 import { AppModule } from './app.module';
+import { redisOptions } from './common/redis.service';
+import { isPublicApiUrl, registerPublicApiHooks } from './public-api/request-log';
 import { SharedHttpIoAdapter } from './common/socket-io.adapter';
 import { M50Server } from './terminals/m50.server';
 
@@ -12,7 +15,14 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     // Base64 JSON uploads (5 MB file → ~7 MB body) are the largest requests.
-    new FastifyAdapter({ logger: false, bodyLimit: 10 * 1024 * 1024, trustProxy: true }),
+    new FastifyAdapter({
+      logger: false,
+      bodyLimit: 10 * 1024 * 1024,
+      // Only the local reverse proxy (Caddy) may set X-Forwarded-For; `true` let any client spoof its IP.
+      trustProxy: process.env.TRUST_PROXY || 'loopback',
+    }),
+    // req.rawBody: optional Ed25519 request signatures cover the exact body bytes (public-api/signing.ts).
+    { rawBody: true },
   );
 
   // The app serves `/v1/...`; the public `/att` prefix belongs to the proxy, which strips it.
@@ -25,9 +35,17 @@ async function bootstrap() {
     global: true,
     max: (req) => (req.url.includes('/mobile/') ? 120 : req.url.includes('/auth/') ? 10 : 600),
     timeWindow: '1 minute',
-    keyGenerator: (req) => (req.headers.authorization ?? req.ip).slice(-64),
-    allowList: (req) => req.url.includes('/health/'),
+    // Shared across instances (in-memory counters multiplied with every replica); fails open if Redis is down.
+    redis: new Redis({ ...redisOptions(), connectTimeout: 500, maxRetriesPerRequest: 1 }),
+    nameSpace: 'rl:app:',
+    skipOnError: true,
+    // Public auth routes key by IP: a junk Authorization header must not buy a fresh bucket.
+    keyGenerator: (req) =>
+      /\/auth\/(forgot|reset)-password/.test(req.url) ? req.ip : (req.headers.authorization ?? req.ip).slice(-64),
+    // The developer API has its own key/org limiter (public-api/limiter.ts).
+    allowList: (req) => req.url.includes('/health/') || isPublicApiUrl(req.url),
   });
+  registerPublicApiHooks(app);
 
   // Not the stock IoAdapter: M50 terminals share this HTTP server with a raw
   // WebSocket handshake, which Engine.IO would otherwise reap as a foreign upgrade.

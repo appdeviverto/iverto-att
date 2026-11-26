@@ -10,12 +10,14 @@ import { AuditableActionService } from '../audit/audit.service';
 import { actorOf, AuthUser, CurrentUser, isHrOrAdmin, Roles } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
+import { isUploadKey } from '../common/uploads';
 import { approvalTrack, approverNames } from '../common/approval';
 import { PrismaService } from '../common/prisma.service';
 import { runAsSystem } from '../common/rls';
 import { BUCKETS, SupabaseService } from '../common/supabase.service';
 import { addDays, dbDate, diffDays, leaveYearOf, leaveYearRange, localYmd, monthRange, Ymd, ymdOf } from '../common/time';
 import { IsHm, IsYmd } from '../common/validators';
+import { assertPayrollOpen } from '../payroll/lock';
 import { NotificationsService } from '../notifications/notifications';
 import { carryForwardOf, eligibleFrom, entitlementOf, Half, leaveDays, monthlyUsage } from './leave-days';
 
@@ -172,23 +174,26 @@ export class LeaveService {
 
   /** Balance per leave year from the ledger; `available` also subtracts pending requests. */
   async balance(employeeId: string, leaveTypeId: string, year: number) {
-    const [sum, pending] = await Promise.all([
-      this.prisma.leaveLedger.aggregate({ where: { employeeId, leaveTypeId, leaveYear: year }, _sum: { delta: true } }),
-      this.prisma.leaveRequest.findMany({ where: { employeeId, leaveTypeId, status: 'PENDING' }, select: { startDate: true, days: true } }),
-    ]);
+    const [sum, pending] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.leaveLedger.aggregate({ where: { employeeId, leaveTypeId, leaveYear: year }, _sum: { delta: true } }),
+      tx.leaveRequest.findMany({ where: { employeeId, leaveTypeId, status: 'PENDING' }, select: { startDate: true, days: true } }),
+    ]));
     const balance = Number(sum._sum.delta ?? 0);
     const pend = pending.filter((p) => leaveYearOf(ymdOf(p.startDate)) === year).reduce((s, p) => s + Number(p.days), 0);
     return { balance: round1(balance), pending: round1(pend), available: round1(balance - pend) };
   }
 
   /** A month's use of a type with a monthly cap (pending + approved), in the type's unit. null = no cap. */
-  async quota(employeeId: string, type: LeaveType, month: string) {
+  /** `monthRows` = the employee's live requests starting in `month` (any type), when the caller already loaded them. */
+  async quota(employeeId: string, type: LeaveType, month: string, monthRows?: Array<{ leaveTypeId: string; days: Prisma.Decimal; minutes: number | null }>) {
     if (type.maxPerMonth === null && type.maxRequestsPerMonth === null) return null;
     const { from, to } = monthRange(month);
-    const rows = await this.prisma.leaveRequest.findMany({
-      where: { employeeId, leaveTypeId: type.id, status: { in: LIVE }, startDate: { gte: dbDate(from), lte: dbDate(to) } },
-      select: { days: true, minutes: true },
-    });
+    const rows = monthRows
+      ? monthRows.filter((r) => r.leaveTypeId === type.id)
+      : await this.prisma.leaveRequest.findMany({
+          where: { employeeId, leaveTypeId: type.id, status: { in: LIVE }, startDate: { gte: dbDate(from), lte: dbDate(to) } },
+          select: { days: true, minutes: true },
+        });
     const limit = type.maxPerMonth === null ? null : Number(type.maxPerMonth);
     return { month, unit: type.unit, ...monthlyUsage(rows, type.unit === 'HOURS'), limit, maxRequests: type.maxRequestsPerMonth };
   }
@@ -203,7 +208,13 @@ export class LeaveService {
 
   /** Everything the apply form needs to show before submitting. Throws only for impossible input. */
   async preview(user: AuthUser, dto: LeaveRequestDto) {
-    const employee = !dto.employeeId || dto.employeeId === user.employeeId ? await this.scope.self(user) : await this.scope.assertEmployee(user, dto.employeeId);
+    return (await this.evaluate(user, dto)).preview;
+  }
+
+  /** preview() plus the employee it resolved, so create() needn't load them again. */
+  private async evaluate(user: AuthUser, dto: LeaveRequestDto) {
+    const own = !dto.employeeId || dto.employeeId === user.employeeId ? await this.scope.self(user) : null;
+    const employee = own ?? (await this.scope.assertEmployee(user, dto.employeeId!));
     await this.assertHasLeave(employee);
     const type = await this.prisma.leaveType.findFirst({ where: { id: dto.leaveTypeId, tenantId: user.tenantId } });
     if (!type || !type.active) throw new AppError(400, 'LEAVE_TYPE_UNAVAILABLE', 'This leave type is not available');
@@ -223,7 +234,7 @@ export class LeaveService {
     const days = await this.countDays(employee, hourly ? { ...type, countsOffDays: false } : type, dto.from, dto.to, startHalf, endHalf);
     const warnings: string[] = [];
     const errors: string[] = [];
-    const tz = (await this.prisma.site.findUnique({ where: { id: employee.siteId } }))?.timezone ?? 'UTC';
+    const tz = (own?.site ?? (await this.prisma.site.findUnique({ where: { id: employee.siteId } })))?.timezone ?? 'UTC';
     const today = localYmd(new Date(), tz);
     if (days.total === 0) errors.push('NO_WORKING_DAYS');
     if (!entitlementOf(employee, type).eligible) errors.push('NOT_ELIGIBLE');
@@ -234,7 +245,7 @@ export class LeaveService {
     }
     if (type.requiresAttachment && !dto.attachmentKey) errors.push('ATTACHMENT_REQUIRED');
     // Only your own uploads can be attached.
-    if (dto.attachmentKey && !dto.attachmentKey.startsWith(`${user.tenantId}/${user.sub}/`)) errors.push('BAD_ATTACHMENT');
+    if (dto.attachmentKey && !isUploadKey(dto.attachmentKey, user.tenantId, user.sub)) errors.push('BAD_ATTACHMENT');
     if (dto.from < today) warnings.push('PAST_DATES');
 
     const balances = [];
@@ -257,7 +268,7 @@ export class LeaveService {
     });
     if (overlap) errors.push('OVERLAPS_EXISTING_REQUEST');
 
-    return {
+    const preview = {
       employeeId: employee.id,
       leaveType: { id: type.id, code: type.code, name: type.name, unit: type.unit },
       from: dto.from,
@@ -276,12 +287,13 @@ export class LeaveService {
       errors,
       canSubmit: errors.length === 0,
     };
+    return { preview, employee };
   }
 
   async create(user: AuthUser, dto: LeaveRequestDto) {
-    const p = await this.preview(user, dto);
+    const { preview: p, employee } = await this.evaluate(user, dto);
     if (!p.canSubmit) throw new AppError(400, p.errors[0], 'This leave request cannot be submitted', p.errors);
-    const employee = await this.prisma.employee.findUniqueOrThrow({ where: { id: p.employeeId } });
+    await assertPayrollOpen(this.prisma, employee.tenantId, dto.from, dto.to);
     const request = await this.audit.run({
       action: 'LEAVE_REQUESTED',
       targetType: 'LeaveRequest',
@@ -356,10 +368,11 @@ export class LeaveService {
     if (!r) throw new AppError(404, 'NOT_FOUND', 'Leave request not found');
     if (r.status !== 'PENDING') throw new AppError(409, 'ALREADY_DECIDED', `This request is already ${r.status.toLowerCase()}`);
     await this.scope.assertApprover(user, r.employeeId);
+    await assertPayrollOpen(this.prisma, r.tenantId, ymdOf(r.startDate), ymdOf(r.endDate));
 
     if (!isHrOrAdmin(user) && r.leaveType.requiresHrApproval) {
       if (r.managerApproverId) throw new AppError(409, 'AWAITING_HR', 'Already approved by a manager; waiting for HR');
-      await this.audit.run({
+      const updated = await this.audit.run({
         action: 'LEAVE_MANAGER_APPROVED',
         targetType: 'LeaveRequest',
         targetId: id,
@@ -375,7 +388,7 @@ export class LeaveService {
         body: `Your leave ${ymdOf(r.startDate)} – ${ymdOf(r.endDate)} is now waiting for HR`,
         data: { id },
       });
-      return this.presentRequest(await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } }));
+      return this.presentRequest(updated);
     }
 
     // Balance is re-checked at approval: other requests may have been approved meanwhile.
@@ -449,6 +462,7 @@ export class LeaveService {
       throw new AppError(409, 'ALREADY_STARTED', 'Ask HR to cancel a leave that has already started');
     }
     const wasApproved = r.status === 'APPROVED';
+    if (wasApproved) await assertPayrollOpen(this.prisma, r.tenantId, ymdOf(r.startDate), ymdOf(r.endDate));
     const cancelled = await this.audit.run({
       action: 'LEAVE_CANCELLED',
       targetType: 'LeaveRequest',
@@ -483,22 +497,35 @@ export class LeaveService {
   }
 
   async balances(user: AuthUser, employeeId: string | undefined, year?: number) {
-    const employee = !employeeId || employeeId === user.employeeId ? await this.scope.self(user) : await this.scope.assertEmployee(user, employeeId);
-    const site = await this.prisma.site.findUnique({ where: { id: employee.siteId } });
+    return (await this.balanceSheet(user, employeeId, year)).sheet;
+  }
+
+  /** The balances plus every leave type of the tenant (ordered by code), so callers needn't load them again. */
+  async balanceSheet(user: AuthUser, employeeId: string | undefined, year?: number) {
+    const own = !employeeId || employeeId === user.employeeId ? await this.scope.self(user) : null;
+    const employee = own ?? (await this.scope.assertEmployee(user, employeeId!));
+    // scope.self already includes the site.
+    const site = own?.site ?? (await this.prisma.site.findUnique({ where: { id: employee.siteId } }));
     const y = year ?? leaveYearOf(localYmd(new Date(), site?.timezone ?? 'UTC'));
-    if (await this.noLeave(employee)) return { employeeId: employee.id, leaveYear: y, period: leaveYearRange(y), balances: [] };
-    const [types, ledger, pending] = await Promise.all([
-      this.prisma.leaveType.findMany({ where: { tenantId: user.tenantId }, orderBy: { code: 'asc' } }),
+    if (await this.noLeave(employee)) return { sheet: { employeeId: employee.id, leaveYear: y, period: leaveYearRange(y), balances: [] }, types: [] as LeaveType[] };
+    const thisMonth = localYmd(new Date(), site?.timezone ?? 'UTC').slice(0, 7);
+    const month = monthRange(thisMonth);
+    const [types, ledger, pending, monthRows] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.leaveType.findMany({ where: { tenantId: user.tenantId }, orderBy: { code: 'asc' } }),
       // periodKey splits CARRY_FORWARD into what came in (CF-IN) and what moved on at year end (CF-OUT).
-      this.prisma.leaveLedger.groupBy({ by: ['leaveTypeId', 'kind', 'periodKey'], where: { employeeId: employee.id, leaveYear: y }, _sum: { delta: true } }),
-      this.prisma.leaveRequest.findMany({ where: { employeeId: employee.id, status: 'PENDING' }, select: { leaveTypeId: true, startDate: true, days: true } }),
-    ]);
+      tx.leaveLedger.groupBy({ by: ['leaveTypeId', 'kind', 'periodKey'], where: { employeeId: employee.id, leaveYear: y }, _sum: { delta: true } }),
+      tx.leaveRequest.findMany({ where: { employeeId: employee.id, status: 'PENDING' }, select: { leaveTypeId: true, startDate: true, days: true } }),
+      // Feeds every capped type's monthly quota (was one query per type).
+      tx.leaveRequest.findMany({
+        where: { employeeId: employee.id, status: { in: LIVE }, startDate: { gte: dbDate(month.from), lte: dbDate(month.to) } },
+        select: { leaveTypeId: true, days: true, minutes: true },
+      }),
+    ]));
     const sum = (typeId: string, kinds: string[], periodPrefix = '') =>
       round1(ledger.filter((l) => l.leaveTypeId === typeId && kinds.includes(l.kind) && (l.periodKey ?? '').startsWith(periodPrefix)).reduce((s, l) => s + Number(l._sum.delta ?? 0), 0));
-    const thisMonth = localYmd(new Date(), site?.timezone ?? 'UTC').slice(0, 7);
     // Types this person is not eligible for are hidden unless they already have history in them.
     const shown = types.filter((t) => (t.active && entitlementOf(employee, t).eligible) || ledger.some((l) => l.leaveTypeId === t.id));
-    return {
+    const sheet = {
       employeeId: employee.id,
       leaveYear: y,
       period: leaveYearRange(y),
@@ -513,7 +540,7 @@ export class LeaveService {
             entitlement: { amount: ent.amount, eligible: ent.eligible, overridden: ent.overridden, eligibleFrom: eligibleFrom(employee, t) },
             /** Unlimited types have no balance: `available` is null. */
             unlimited: t.accrualKind === 'UNLIMITED',
-            quota: await this.quota(employee.id, t, thisMonth),
+            quota: await this.quota(employee.id, t, thisMonth, monthRows),
             opening: sum(t.id, ['OPENING']),
             carriedForward: sum(t.id, ['CARRY_FORWARD']),
             carriedIn: sum(t.id, ['CARRY_FORWARD'], 'CF-IN:'),
@@ -529,11 +556,12 @@ export class LeaveService {
         }),
       ),
     };
+    return { sheet, types };
   }
 
   /** Per-person override of the blanket leave policy (HR). Applies to accruals from now on. */
   async setEntitlement(user: AuthUser, dto: EntitlementDto) {
-    const employee = await this.scope.assertEmployee(user, dto.employeeId);
+    const employee = await this.scope.assertOther(user, dto.employeeId);
     const type = await this.prisma.leaveType.findFirst({ where: { id: dto.leaveTypeId, tenantId: user.tenantId } });
     if (!type) throw new AppError(404, 'NOT_FOUND', 'Leave type not found');
     const { [type.id]: _old, ...rest } = (employee.leaveEntitlements ?? {}) as Record<string, number>;
@@ -559,7 +587,7 @@ export class LeaveService {
   }
 
   async adjust(user: AuthUser, dto: AdjustmentDto) {
-    await this.assertHasLeave(await this.scope.assertEmployee(user, dto.employeeId));
+    await this.assertHasLeave(await this.scope.assertOther(user, dto.employeeId));
     await this.prisma.leaveType.findFirstOrThrow({ where: { id: dto.leaveTypeId, tenantId: user.tenantId } });
     return this.audit.run({
       action: 'LEAVE_ADJUSTED',
@@ -586,7 +614,7 @@ export class LeaveService {
 
   /** Comp-off (§8.2): a finalised off-day worked for ≥ half a day earns 0.5 or 1 day of COMP. */
   async compOff(user: AuthUser, dto: CompOffDto) {
-    await this.assertHasLeave(await this.scope.assertEmployee(user, dto.employeeId));
+    await this.assertHasLeave(await this.scope.assertOther(user, dto.employeeId));
     const type = await this.prisma.leaveType.findFirst({ where: { tenantId: user.tenantId, code: 'COMP' } });
     if (!type) throw new AppError(400, 'NO_COMP_TYPE', 'Create a leave type with code COMP first');
     const day = await this.prisma.attendanceDay.findUnique({ where: { employeeId_workDate: { employeeId: dto.employeeId, workDate: dbDate(dto.date) } } });
@@ -643,13 +671,13 @@ export class LeaveService {
     const today = localYmd(new Date(), tz);
     const year = leaveYearOf(today);
     const { from: yearStart } = leaveYearRange(year);
-    const [types, employees] = await Promise.all([
-      this.prisma.leaveType.findMany({ where: { tenantId, active: true } }),
-      this.prisma.employee.findMany({
+    const [types, employees] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.leaveType.findMany({ where: { tenantId, active: true } }),
+      tx.employee.findMany({
         where: { tenantId, status: 'ACTIVE', ...(skipInterns ? { employmentType: { not: 'INTERN' } } : {}) },
         select: { id: true, joinedOn: true, employmentType: true, leaveEntitlements: true },
       }),
-    ]);
+    ]));
     // Close last year first, so this year's max-balance cap already sees what was carried in.
     await this.closeYear(tenantId, year - 1, types);
     const months: string[] = [];
@@ -817,7 +845,8 @@ export class LeaveController {
   @Get('requests/:id/attachment')
   async attachment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const r = await this.prisma.leaveRequest.findFirst({ where: { id, tenantId: user.tenantId } });
-    if (!r?.attachmentKey) throw new AppError(404, 'NOT_FOUND', 'No attachment');
+    // Rows filed before keys were validated strictly may hold a crafted key: never sign those.
+    if (!r?.attachmentKey || !isUploadKey(r.attachmentKey, r.tenantId)) throw new AppError(404, 'NOT_FOUND', 'No attachment');
     if (r.employeeId !== user.employeeId) await this.scope.assertEmployee(user, r.employeeId);
     return { url: await this.supabase.signedUrl(BUCKETS.uploads(), r.attachmentKey, 300), expiresInSeconds: 300 };
   }

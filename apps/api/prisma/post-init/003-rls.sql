@@ -38,7 +38,10 @@ BEGIN
     'terminal_face_templates','punches','attendance_days','attendance_corrections','shifts',
     'shift_patterns','employee_schedules','roster_overrides','leave_types','leave_ledger',
     'leave_requests','remote_work_requests','report_jobs','report_schedules','report_templates','push_devices','field_visits',
-    'app_notifications'
+    'app_notifications',
+    'profile_change_requests','employee_documents','letter_templates','employee_tasks','expense_claims','assets',
+    'announcements','announcement_acks','salary_structures','employee_salaries','payroll_adjustments','employee_loans',
+    'payroll_runs','payslips'
   ] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
@@ -73,3 +76,13 @@ DROP POLICY IF EXISTS rls_audit_select ON public.audit_logs;
 DROP POLICY IF EXISTS rls_audit_insert ON public.audit_logs;
 CREATE POLICY rls_audit_select ON public.audit_logs FOR SELECT USING (public.rls_tenant_allowed(tenant_id));
 CREATE POLICY rls_audit_insert ON public.audit_logs FOR INSERT WITH CHECK (public.rls_tenant_allowed(tenant_id));
+
+-- Platform announcements are global (no tenant_id): every signed-in caller may read them,
+-- only platform admins (system context) write.
+ALTER TABLE public.platform_announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_announcements FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_platform_announcements_read ON public.platform_announcements;
+DROP POLICY IF EXISTS rls_platform_announcements_write ON public.platform_announcements;
+CREATE POLICY rls_platform_announcements_read ON public.platform_announcements FOR SELECT USING (true);
+CREATE POLICY rls_platform_announcements_write ON public.platform_announcements
+  USING (public.rls_is_system()) WITH CHECK (public.rls_is_system());

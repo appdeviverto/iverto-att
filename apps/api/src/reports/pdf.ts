@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { readFileSync } from 'fs';
+import { isIP } from 'net';
 import { join } from 'path';
 import pdfmake from 'pdfmake';
 import type { Column as PdfColumn, Content, CustomTableLayout, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces';
 import { Column, ReportData, ReportDefinition, Section } from './definitions';
 
 /** core-ui light palette; a PDF is paper, so there is no dark variant. */
-const C = {
+export const C = {
   brand: '#cd0447', brandTo: '#e91e63', body: '#1f2937', secondary: '#374151', muted: '#6b7280',
   line: '#e5e7eb', lineSoft: '#eef0f3', lineStrong: '#d1d5db', subtle: '#f9fafb', head: '#f3f4f6',
 };
@@ -34,7 +35,7 @@ const MARGIN = 28;
 pdfmake.setUrlAccessPolicy(() => false);
 pdfmake.setLocalAccessPolicy(() => false);
 let fontsReady = false;
-function registerFonts() {
+export function registerFonts() {
   if (fontsReady) return;
   // TTF, not core-ui's woff2: fontkit can't subset woff2. Full Poppins covers Latin + Devanagari.
   // pdfmake 0.3 takes font *paths*; its in-memory fs keeps them off the disk policy.
@@ -49,10 +50,14 @@ function registerFonts() {
 }
 
 /** Tenant logo as a data URL, or null (→ wordmark). https PNG/JPEG only, small, fast. */
-async function fetchLogo(url?: string | null): Promise<string | null> {
+export async function fetchLogo(url?: string | null): Promise<string | null> {
   if (!url || !url.startsWith('https://')) return null;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    // No IP literals / localhost and no redirects: the URL is tenant-supplied, so keep the server off internal hosts.
+    // ponytail: a public name resolving to a private IP still passes; pin DNS if that matters.
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
+    if (isIP(host) || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) return null;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: 'error' });
     const type = res.headers.get('content-type') ?? '';
     if (!res.ok || !/^image\/(png|jpe?g)$/.test(type.split(';')[0])) return null;
     const buf = Buffer.from(await res.arrayBuffer());
@@ -64,6 +69,8 @@ async function fetchLogo(url?: string | null): Promise<string | null> {
 
 export interface RenderMeta {
   orgName: string;
+  /** Address · phone · email, printed under the band (company letterhead details). */
+  contact?: string | null;
   logoUrl?: string | null;
   period: string;
   filterChips: string[];
@@ -238,6 +245,7 @@ export function buildDoc(def: ReportDefinition, data: ReportData, meta: RenderMe
 
   const content: Content[] = [
     band(def, meta, width, Boolean(logo)),
+    ...(meta.contact ? [{ text: meta.contact, fontSize: 7.5, color: C.secondary, margin: [2, 0, 0, 4] } as Content] : []),
     ...(meta.filterChips.length ? [{ text: meta.filterChips.join('   ·   '), fontSize: 7.5, color: C.muted, margin: [2, 0, 0, 10] } as Content] : []),
     ...kpis(data.kpis, width, a3),
     ...(data.chart?.bars.length ? [chart(data.chart, width)] : []),

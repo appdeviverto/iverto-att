@@ -1,4 +1,4 @@
-import { Badge, Button, Callout, CenteredSpinner, DateInput, DescriptionList, Modal, Select, Textarea } from '@iverto-org/core-ui';
+import { Badge, Button, Callout, CenteredSpinner, Checkbox, DateInput, DescriptionList, Modal, Textarea } from '@iverto-org/core-ui';
 import { ClipboardEdit } from 'lucide-react';
 import { useState } from 'react';
 import { post, useAction, useApi } from '../lib/api';
@@ -106,11 +106,14 @@ export function DayDrawer({ dayId, onClose }: { dayId: string | null; onClose: (
 /** Missed-punch fix (§1): approval adds CORRECTION punches; nothing is overwritten (D5). */
 export function CorrectionModal({ open, onClose, employeeId, date }: { open: boolean; onClose: () => void; employeeId?: string; date?: string }) {
   const me = useMe();
-  const [f, set] = useForm({ employeeId: employeeId ?? '', date: date ?? '', in: '', out: '', reason: '', fieldVisitId: '' });
+  const [f, set] = useForm({ employeeId: employeeId ?? '', date: date ?? '', in: '', out: '', reason: '' });
+  const [proof, setProof] = useState<string[]>([]);
   const who = f.employeeId || me.employeeId;
   const visits = useApi<{ data: FieldVisit[] }>('/field-visits', { employeeId: who, date: f.date }, { enabled: Boolean(who && f.date) }).data?.data ?? [];
+  // Ticks left over from another employee or date don't count.
+  const picked = proof.filter((id) => visits.some((v) => v.id === id));
   const save = useAction(
-    () => post('/attendance/corrections', { employeeId: f.employeeId || undefined, date: f.date, in: f.in || undefined, out: f.out || undefined, reason: f.reason, fieldVisitId: f.fieldVisitId || undefined }),
+    () => post('/attendance/corrections', { employeeId: f.employeeId || undefined, date: f.date, in: f.in || undefined, out: f.out || undefined, reason: f.reason, fieldVisitIds: picked.length ? picked : undefined }),
     { invalidate: ['/attendance'], success: isHr(me) ? 'Correction filed' : 'Correction sent for approval', onSuccess: onClose },
   );
   return (
@@ -124,8 +127,18 @@ export function CorrectionModal({ open, onClose, employeeId, date }: { open: boo
       </div>
       <Textarea label="Reason" required minLength={3} maxLength={500} value={f.reason} onChange={(e) => set('reason')(e.target.value)} />
       {visits.length > 0 && (
-        <Select label="Proof (field visit)" hint="A geotagged selfie taken in the mobile app that day" placeholder="No proof attached" value={f.fieldVisitId} onChange={(e) => set('fieldVisitId')(e.target.value)}
-          options={visits.map((v) => ({ value: v.id, label: `${v.local.slice(11)}${v.note ? ` · ${v.note}` : ''}` }))} />
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-fg">Proof (field visits)</legend>
+          <p className="text-xs text-fg-muted">Geotagged selfies taken in the mobile app that day. Tick every client you visited (up to 10).</p>
+          {visits.map((v) => (
+            <div key={v.id} className="flex items-center gap-3">
+              <img src={v.photoUrl} alt="" className="size-10 shrink-0 rounded-full object-cover" loading="lazy" />
+              <Checkbox label={v.local.slice(11)} description={v.note ?? undefined} checked={proof.includes(v.id)}
+                disabled={!proof.includes(v.id) && picked.length >= 10}
+                onChange={(e) => setProof((p) => (e.target.checked ? [...p, v.id] : p.filter((id) => id !== v.id)))} />
+            </div>
+          ))}
+        </fieldset>
       )}
     </FormModal>
   );

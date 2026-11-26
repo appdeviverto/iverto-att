@@ -15,6 +15,7 @@ import { approvalTrack, approverNames } from '../common/approval';
 import { PrismaService } from '../common/prisma.service';
 import { dbDate, diffDays, formatLocal, localYmd, ymdOf } from '../common/time';
 import { IsYmd } from '../common/validators';
+import { assertPayrollOpen } from '../payroll/lock';
 import { NoteDto, RequiredNoteDto } from '../leave/leave';
 import { NotificationsService } from '../notifications/notifications';
 import { PunchesModule, PunchesService } from '../punches/punches';
@@ -131,6 +132,7 @@ export class RemoteService {
     const employee = await this.scope.self(user);
     if (dto.to < dto.from) throw new AppError(400, 'BAD_RANGE', 'to is before from');
     if (diffDays(dto.from, dto.to) > 92) throw new AppError(400, 'RANGE_TOO_LARGE', 'At most 93 days per request');
+    await assertPayrollOpen(this.prisma, employee.tenantId, dto.from, dto.to);
     const r = await this.audit.run({
       action: 'REMOTE_REQUESTED',
       targetType: 'RemoteWorkRequest',
@@ -180,6 +182,7 @@ export class RemoteService {
       return this.present(passed);
     }
     const wasApproved = r.status === 'APPROVED';
+    if (verdict === 'APPROVED' || wasApproved) await assertPayrollOpen(this.prisma, r.tenantId, ymdOf(r.startDate), ymdOf(r.endDate));
     const updated = await this.audit.run({
       action: `REMOTE_${verdict}`,
       targetType: 'RemoteWorkRequest',
@@ -296,6 +299,8 @@ export class RemoteService {
     if (!p?.employee) throw new AppError(404, 'NOT_FOUND', 'Mobile check-in not found');
     await this.scope.assertApprover(user, p.employee.id);
     if (p.reviewStatus !== 'PENDING') throw new AppError(409, 'ALREADY_DECIDED', `This check-in is already ${(p.reviewStatus ?? 'reviewed').toLowerCase()}`);
+    // Approving changes nothing (the punch already counts); a rejection takes it out of the day.
+    if (verdict === 'REJECTED') await assertPayrollOpen(this.prisma, p.tenantId, p.workDate ? ymdOf(p.workDate) : localYmd(p.punchedAt, p.employee.site.timezone));
     const updated = await this.audit.run({
       action: `MOBILE_PUNCH_${verdict}`,
       targetType: 'Punch',

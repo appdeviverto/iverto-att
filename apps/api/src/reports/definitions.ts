@@ -7,6 +7,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { absenceDeductionDays, lateDays, lateDeductionDays } from '../attendance/engine/compute-day';
 import { statusCode } from '../attendance/present';
 import { dbDate, eachDay, formatLocal, leaveYearOf, ymdOf } from '../common/time';
+import { payableDays } from '../payroll/engine';
 
 export interface ReportFilters {
   dateFrom?: string;
@@ -247,6 +248,86 @@ export const REPORTS: ReportDefinition[] = [
           { label: 'Late penalty (days)', value: rows.reduce((s, r) => s + Number(r.t_LD), 0), tone: 'danger' },
         ],
         sections: [...byDept].map(([title, list]) => ({ title: title || 'No department', columns, rows: list })),
+      };
+    },
+  },
+  {
+    type: 'payable-days',
+    title: 'Payable Days',
+    description: 'Per employee: employed days, absences, late penalty, unpaid leave, LOP, paid days and overtime — the payroll input, computed exactly as a payroll run does.',
+    formats: ['pdf', 'csv'],
+    paper: { format: 'A4', landscape: true },
+    filters: COMMON,
+    maxDays: 62,
+    async run(ctx) {
+      const [days, unpaid] = await Promise.all([
+        loadDays(ctx),
+        ctx.prisma.leaveType.findMany({ where: { tenantId: ctx.tenantId, paid: false }, select: { id: true } }),
+      ]);
+      const unpaidIds = new Set(unpaid.map((u) => u.id));
+      const rows = [...grouped(days, (d) => d.employeeId).values()].map((list) => {
+        const e = list[0].employee;
+        const p = payableDays(
+          list.map((d) => ({
+            workDate: ymdOf(d.workDate),
+            status: d.status,
+            leavePortion: Number(d.leavePortion),
+            leaveTypeId: d.leaveTypeId,
+            isLate: d.isLate,
+            isEarlyExit: d.isEarlyExit,
+            overtimeMinutes: d.overtimeMinutes,
+            finalized: Boolean(d.finalizedAt),
+            policy: d.policy as Record<string, unknown>,
+          })),
+          { start: ctx.from, end: ctx.to },
+          ymdOf(e.joinedOn),
+          e.exitOn ? ymdOf(e.exitOn) : null,
+          unpaidIds,
+        );
+        return {
+          code: e.employeeCode,
+          name: e.fullName,
+          department: e.department?.name ?? '',
+          period: p.periodDays,
+          employed: p.employedDays,
+          absent: p.absentDays,
+          half: p.halfDays,
+          absenceDed: p.absenceDeduction,
+          late: p.lateCount,
+          lateDed: p.lateDeduction,
+          unpaidLeave: p.unpaidLeave,
+          lop: p.lopDays,
+          paid: p.paidDays,
+          ot: p.overtimeHours,
+          pending: p.pendingDays || '',
+        };
+      });
+      const columns: Column[] = [
+        { key: 'code', label: 'Code' },
+        { key: 'name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'period', label: 'Days', align: 'right' },
+        { key: 'employed', label: 'Employed', align: 'right' },
+        { key: 'absent', label: 'Absent', align: 'right', divider: true },
+        { key: 'half', label: 'Half days', align: 'right' },
+        { key: 'absenceDed', label: 'Absence ded.', align: 'right' },
+        { key: 'late', label: 'Lates', align: 'right' },
+        { key: 'lateDed', label: 'Late ded.', align: 'right' },
+        { key: 'unpaidLeave', label: 'Unpaid leave', align: 'right' },
+        { key: 'lop', label: 'LOP', align: 'right', divider: true },
+        { key: 'paid', label: 'Paid days', align: 'right' },
+        { key: 'ot', label: 'OT h', align: 'right' },
+        { key: 'pending', label: 'Not final', align: 'right' },
+      ];
+      return {
+        kpis: [
+          { label: 'Employees', value: rows.length },
+          { label: 'Paid days', value: Math.round(rows.reduce((s, r) => s + r.paid, 0) * 10) / 10, tone: 'success' },
+          { label: 'LOP days', value: Math.round(rows.reduce((s, r) => s + r.lop, 0) * 10) / 10, tone: 'danger' },
+          { label: 'OT hours', value: Math.round(rows.reduce((s, r) => s + r.ot, 0) * 10) / 10, tone: 'info' },
+          { label: 'Days not final', value: rows.reduce((s, r) => s + Number(r.pending || 0), 0), tone: 'warning' },
+        ],
+        sections: [{ columns, rows }],
       };
     },
   },

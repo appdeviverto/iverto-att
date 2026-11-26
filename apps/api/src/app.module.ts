@@ -12,13 +12,17 @@ import { redisOptions } from './common/redis.service';
 import { EmployeesModule } from './employees/employees';
 import { FieldVisitsModule } from './field-visits/field-visits';
 import { HealthModule } from './health';
+import { HrModule } from './hr/hr.module';
 import { JobsModule } from './jobs/jobs';
 import { LeaveModule } from './leave/leave';
 import { LiveModule } from './live/live.module';
 import { MobileModule } from './mobile/mobile';
 import { NotificationsModule } from './notifications/notifications';
 import { OrgModule } from './org/org';
+import { PayrollModule } from './payroll/payroll';
+import { PlatformAnnouncementsModule } from './platform/announcements';
 import { PlatformModule } from './platform/platform';
+import { PublicApiModule } from './public-api/public-api.module';
 import { PunchesModule } from './punches/punches';
 import { RemoteModule } from './remote/remote';
 import { ReportsModule } from './reports/reports';
@@ -39,6 +43,7 @@ import { UsersModule } from './users/users.controller';
     AttendanceCoreModule,
     // Domain
     PlatformModule,
+    PlatformAnnouncementsModule,
     UsersModule,
     OrgModule,
     EmployeesModule,
@@ -49,8 +54,11 @@ import { UsersModule } from './users/users.controller';
     LeaveModule,
     RemoteModule,
     FieldVisitsModule,
+    HrModule,
+    PayrollModule,
     ReportsModule,
     MobileModule,
+    PublicApiModule,
     JobsModule,
     HealthModule,
   ],

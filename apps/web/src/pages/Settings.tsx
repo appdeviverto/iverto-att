@@ -1,12 +1,15 @@
 import {
   AppearanceSettings, Badge, Button, Callout, Card, CenteredSpinner, CopyField, DataTable, DescriptionList, EmptyState, IconButton, Modal, Pagination, PasswordStrength, PillTabs, Select, SettingsLayout, TextField, confirmAction,
 } from '@iverto-org/core-ui';
-import { Building2, ClipboardList, KeyRound, Layers, MapPin, Palette, Plus, Scale, ShieldCheck, ShieldOff, Users, FolderKanban, UserX, UserCheck } from 'lucide-react';
+import { Building2, ClipboardList, Code2, FileSignature, HeartHandshake, KeyRound, Layers, MapPin, Palette, Plus, Scale, ShieldCheck, ShieldOff, Users, FolderKanban, UserX, UserCheck, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { ApiKeysSection } from '../components/ApiAccess';
 import { Crud } from '../components/Crud';
+import { HrSettingsSection, LettersSection, PayrollSettingsSection } from '../components/HrSettings';
+import { Letterhead } from '../components/Letterhead';
 import { clean, EmployeePicker, Fields, FormModal, Panel, Pick, useForm } from '../components/ui';
-import { changeOwnPassword, DEFAULT_EMPLOYMENT_TYPES, del, patch, post, useAction, useApi, useCalendars, useDepartments, useEmployeeOptions, useLeaveTypes, useProjects, useShifts, useSites, useUsers, type Page, type UserProfile } from '../lib/api';
+import { changeOwnPassword, DEFAULT_EMPLOYMENT_TYPES, del, patch, post, useAction, useApi, useCalendars, useDepartments, useEmployeeOptions, useLeaveTypes, useFeatures, useProjects, useShifts, useSites, useUsers, type Page, type UserProfile } from '../lib/api';
 import { isHr, useMe } from '../lib/auth';
 import { ACTION_OPTIONS, actionLabel, actionTone, auditSentence, pageOf, readableFields, SUPPORT_ACCESS, type AuditEntry, type NameOf } from '../lib/audit';
 import { dateTime, REQUEST_STATUS, ROLE_LABEL, ROLES, StatusBadge } from '../lib/format';
@@ -16,6 +19,7 @@ export function Settings() {
   const navigate = useNavigate();
   const admin = me.role === 'ADMIN';
   const hr = isHr(me);
+  const features = useFeatures();
   const sections = [
     ...(admin ? [{ id: 'organisation', label: 'Organisation', icon: <Building2 size={18} />, description: 'Name, day boundary, branding' }] : []),
     ...(hr ? [
@@ -24,13 +28,22 @@ export function Settings() {
       { id: 'projects', label: 'Projects', icon: <FolderKanban size={18} /> },
       { id: 'policies', label: 'Attendance policies', icon: <Scale size={18} />, description: 'Grace, thresholds, overtime, late penalty' },
       { id: 'users', label: 'Users & roles', icon: <Users size={18} /> },
+      ...(features.payroll ? [{ id: 'payroll', label: 'Payroll', icon: <Wallet size={18} />, description: 'Pay cycle, locking, PF / ESI / PT' }] : []),
+      ...(features.hr
+        ? [
+            { id: 'hr', label: 'HR', icon: <HeartHandshake size={18} />, description: 'Checklists, expense & asset categories' },
+            { id: 'letters', label: 'Letters', icon: <FileSignature size={18} />, description: 'Offer, appointment, experience…' },
+          ]
+        : []),
     ] : []),
     { id: 'password', label: 'Password', icon: <KeyRound size={18} /> },
     { id: 'appearance', label: 'Appearance', icon: <Palette size={18} /> },
+    ...(admin ? [{ id: 'api', label: 'API & integrations', icon: <Code2 size={18} />, description: 'Keys for your other systems' }] : []),
     ...(admin ? [{ id: 'audit', label: 'Audit log', icon: <ClipboardList size={18} /> }] : []),
   ];
   const { section = sections[0].id } = useParams();
   return (
+    <div className="settings-sticky">
     <SettingsLayout sections={sections} activeId={section} onSelect={(id) => navigate(`/settings/${id}`)}>
       {section === 'organisation' && <Organisation />}
       {section === 'sites' && <Sites />}
@@ -43,10 +56,15 @@ export function Settings() {
       )}
       {section === 'policies' && <Policies />}
       {section === 'users' && <UsersSection />}
+      {section === 'payroll' && features.payroll && <PayrollSettingsSection />}
+      {section === 'hr' && features.hr && <HrSettingsSection />}
+      {section === 'letters' && features.hr && <LettersSection />}
       {section === 'password' && <ChangePassword />}
       {section === 'appearance' && <Card><AppearanceSettings /></Card>}
       {section === 'audit' && <Audit />}
+      {section === 'api' && admin && <ApiKeysSection />}
     </SettingsLayout>
+    </div>
   );
 }
 
@@ -58,6 +76,18 @@ const parseCategories = (text: string) =>
     const [a, b] = l.includes('=') ? l.split('=').map((x) => x.trim()) : [l, l];
     return { code: a.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 20), label: b };
   });
+
+const LETTERHEAD_KEYS = ['legalName', 'address', 'phone', 'email', 'website', 'registration'] as const;
+
+/** What the top of a payslip or letter will look like (the same component the letter editor previews with). */
+function LetterheadPreview({ f, orgName }: { f: Record<string, any>; orgName: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-white p-5 shadow-soft">
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-[#9ca3af]">Preview</p>
+      <Letterhead branding={f} fallbackName={orgName} />
+    </div>
+  );
+}
 
 function Organisation() {
   const { data } = useApi<Org>('/org');
@@ -72,11 +102,16 @@ function OrgForm({ org }: { org: Org }) {
     punchPhotoRetentionDays: s.punchPhotoRetentionDays ?? 90, reportRetentionDays: s.reportRetentionDays ?? 90,
     employmentTypes: ((s.employmentTypes?.length ? s.employmentTypes : DEFAULT_EMPLOYMENT_TYPES) as { code: string; label: string }[]).map((t) => `${t.code} = ${t.label}`).join('\n'),
     displayName: s.branding?.displayName ?? '', logoUrl: s.branding?.logoUrl ?? '', primaryColor: s.branding?.primaryColor ?? null,
+    ...Object.fromEntries(LETTERHEAD_KEYS.map((k) => [k, s.branding?.[k] ?? ''])),
   });
   const set = (k: string) => (v: unknown) => setF((x) => ({ ...x, [k]: v }));
   const save = useAction(() => {
-    const { displayName, logoUrl, primaryColor, employmentTypes, ...rest } = f;
-    return patch('/org', { ...rest, employmentTypes: parseCategories(employmentTypes), branding: clean({ displayName, logoUrl, primaryColor: primaryColor ?? undefined }) });
+    const { displayName, logoUrl, primaryColor, employmentTypes, legalName, address, phone, email, website, registration, ...rest } = f;
+    return patch('/org', {
+      ...rest,
+      employmentTypes: parseCategories(employmentTypes),
+      branding: clean({ displayName, logoUrl, primaryColor: primaryColor ?? undefined, legalName, address, phone, email, website, registration }),
+    });
   }, { invalidate: ['/org'], success: 'Organisation settings saved' });
   return (
     <Card>
@@ -97,6 +132,21 @@ function OrgForm({ org }: { org: Org }) {
           { key: 'logoUrl', label: 'Logo URL (https)', hint: 'Replaces the Iverto logo in the web app, mobile app and reports. Square images look best.' },
           { key: 'primaryColor', label: 'Report accent colour', type: 'color' },
         ]} />
+        <div className="space-y-4 border-t border-line-soft pt-5">
+          <div>
+            <h3 className="font-semibold text-fg">Company letterhead</h3>
+            <p className="text-sm text-fg-muted">Printed at the top of payslips, letters and report PDFs, with the logo above.</p>
+          </div>
+          <Fields form={f} set={set} specs={[
+            { key: 'legalName', label: 'Registered company name', hint: 'e.g. Acme Industries Pvt. Ltd. — blank uses the display name' },
+            { key: 'address', label: 'Address', type: 'textarea', hint: 'Line breaks are kept on the letterhead' },
+            { key: 'phone', label: 'Phone' },
+            { key: 'email', label: 'Email', type: 'email' },
+            { key: 'website', label: 'Website' },
+            { key: 'registration', label: 'Registration numbers', hint: 'e.g. CIN U12345KA2020PTC000000 · GSTIN 29ABCDE1234F1Z5' },
+          ]} />
+          <LetterheadPreview f={f} orgName={org.name} />
+        </div>
         <Button type="submit" loading={save.isPending}>Save settings</Button>
       </form>
     </Card>

@@ -81,6 +81,20 @@ export class TerminalsService {
     return device;
   }
 
+  /** Lets the terminal Register once more (after a factory reset or a lost token); its current token stops working. */
+  async rearm(tenantId: string, deviceId: string, actor: AuditActor) {
+    await this.audit.run({
+      action: 'TERMINAL_REARMED',
+      targetType: 'Device',
+      targetId: deviceId,
+      actor,
+      tenantId,
+      run: (tx) => tx.device.update({ where: { id: deviceId }, data: { terminalToken: null, status: 'provisioned' }, omit: { terminalToken: true } }),
+    });
+    this.sessions.get(deviceId)?.close(1012, 're-armed');
+    return { ok: true };
+  }
+
   /** Only a terminal that never recorded a punch can be deleted; otherwise it is history. */
   async remove(tenantId: string, deviceId: string, actor: AuditActor) {
     if (await this.prisma.punch.count({ where: { deviceId } })) {

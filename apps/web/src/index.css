@@ -1,2 +1,40 @@
 @import "tailwindcss";
 @import "@iverto-org/core-ui/theme.css";
+
+/* Org chart connectors (components/OrgTree.tsx): each child list hangs from one line out of its parent. */
+.org-tree ul { position: relative; display: flex; justify-content: center; margin: 0; padding: 28px 0 0; }
+.org-tree li { position: relative; display: flex; flex-direction: column; align-items: center; padding: 28px 10px 0; list-style: none; }
+.org-tree li::before, .org-tree li::after { content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 28px; border-top: 1.5px solid var(--color-line-strong); }
+.org-tree li::after { right: auto; left: 50%; border-left: 1.5px solid var(--color-line-strong); }
+.org-tree li:only-child::before { display: none; }
+.org-tree li:only-child::after { border-top: 0; border-radius: 0; }
+.org-tree li:first-child::before, .org-tree li:last-child::after { border: 0 none; }
+.org-tree li:last-child::before { border-right: 1.5px solid var(--color-line-strong); border-radius: 0 12px 0 0; }
+.org-tree li:first-child::after { border-radius: 12px 0 0 0; }
+.org-tree ul ul::before { content: ''; position: absolute; top: 0; left: 50%; height: 28px; border-left: 1.5px solid var(--color-line-strong); }
+/* The top row has no parent above it. */
+.org-tree > ul { padding-top: 0; }
+.org-tree > ul > li { padding-top: 0; }
+.org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
+
+/* Settings: keep the section list (core-ui SettingsLayout's left column) in view while the panel scrolls. */
+@media (min-width: 768px) {
+  .settings-sticky .md\:w-60 {
+    position: sticky;
+    top: 1.5rem;
+    align-self: flex-start;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+  }
+}
+
+/* core-ui's SearchInput draws its own clear (×) button; hide the browser's native one so there is only one. */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+
+/* Sidebar "Search ⌘K": core-ui wraps a nav badge in a small pink count pill; a key cap brings its own frame. */
+span:has(> .nav-kbd) { background: transparent; padding: 0; height: auto; min-width: 0; }
+
+/* SearchSelect's list is absolutely positioned, so a modal's scrolling body clips it to a sliver.
+   Inside a dialog, keep it in the flow instead: the modal grows (or scrolls) to show the whole list. */
+[role='dialog'] ul[role='listbox'].absolute { position: static; }

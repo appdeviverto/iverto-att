@@ -1,0 +1,73 @@
+-- Sandbox orgs (docs/public-api.md §13) and API usage alerts (§15).
+
+-- A tenant is LIVE or a SANDBOX that belongs to exactly one LIVE org.
+DO $$
+BEGIN
+  ALTER TABLE public.tenants DROP CONSTRAINT IF EXISTS tenants_kind_chk;
+  ALTER TABLE public.tenants ADD CONSTRAINT tenants_kind_chk
+    CHECK (kind IN ('LIVE', 'SANDBOX') AND (kind = 'SANDBOX') = (parent_tenant_id IS NOT NULL));
+  ALTER TABLE public.tenants DROP CONSTRAINT IF EXISTS tenants_parent_fkey;
+  ALTER TABLE public.tenants ADD CONSTRAINT tenants_parent_fkey FOREIGN KEY (parent_tenant_id) REFERENCES public.tenants (id);
+  ALTER TABLE public.api_keys DROP CONSTRAINT IF EXISTS api_keys_environment_chk;
+  ALTER TABLE public.api_keys ADD CONSTRAINT api_keys_environment_chk CHECK (environment IN ('live', 'test'));
+  ALTER TABLE public.api_alerts DROP CONSTRAINT IF EXISTS api_alerts_level_chk;
+  ALTER TABLE public.api_alerts ADD CONSTRAINT api_alerts_level_chk CHECK (level IN ('warning', 'critical'));
+END $$;
+
+ALTER TABLE public.api_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_alerts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_tenant_isolation ON public.api_alerts;
+CREATE POLICY rls_tenant_isolation ON public.api_alerts
+  USING (public.rls_tenant_allowed(tenant_id)) WITH CHECK (public.rls_tenant_allowed(tenant_id));
+
+-- POST /v1/sandbox/reset: deletes a SANDBOX tenant's business data so it can be re-seeded.
+-- The kind check is here, in the database, on a locked row: no caller can point it at a live
+-- org. Keys, webhooks, logs, events, jobs, alerts and the audit trail are kept. Tables are
+-- found by their tenant_id column, so new tables are covered; foreign keys are satisfied by
+-- retrying until a pass deletes nothing more.
+CREATE OR REPLACE FUNCTION public.sandbox_wipe(p_tenant text) RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  k text;
+  t text;
+  n bigint;
+  total bigint := 0;
+  progress boolean;
+  pending text[];
+  keep constant text[] := ARRAY['tenants', 'audit_logs', 'api_keys', 'api_policy_versions', 'api_request_logs', 'api_credit_ledger',
+    'webhook_endpoints', 'webhook_deliveries', 'api_events', 'api_jobs', 'api_alerts', 'deleted_records'];
+BEGIN
+  SELECT kind INTO k FROM tenants WHERE id = p_tenant FOR UPDATE;
+  IF k IS DISTINCT FROM 'SANDBOX' THEN
+    RAISE EXCEPTION 'sandbox_wipe: % is not a sandbox tenant', p_tenant;
+  END IF;
+  SELECT array_agg(c.table_name::text) INTO pending
+    FROM information_schema.columns c JOIN pg_tables p ON p.schemaname = 'public' AND p.tablename = c.table_name
+   WHERE c.table_schema = 'public' AND c.column_name = 'tenant_id' AND c.table_name <> ALL (keep);
+  FOR pass IN 1..20 LOOP
+    progress := false;
+    FOREACH t IN ARRAY coalesce(pending, '{}') LOOP
+      BEGIN
+        EXECUTE format('DELETE FROM public.%I WHERE tenant_id = $1', t) USING p_tenant;
+        GET DIAGNOSTICS n = ROW_COUNT;
+        total := total + n;
+        pending := array_remove(pending, t);
+        progress := true;
+      EXCEPTION WHEN foreign_key_violation THEN
+        NULL; -- a child table still points here; next pass
+      END;
+    END LOOP;
+    EXIT WHEN pending IS NULL OR cardinality(pending) = 0 OR NOT progress;
+  END LOOP;
+  IF cardinality(coalesce(pending, '{}')) > 0 THEN
+    RAISE EXCEPTION 'sandbox_wipe: could not empty %', pending;
+  END IF;
+  RETURN total;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.sandbox_wipe(text) FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+    GRANT EXECUTE ON FUNCTION public.sandbox_wipe(text) TO app_user;
+  END IF;
+END $$;

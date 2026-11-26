@@ -1,31 +1,43 @@
-import { Body, Controller, Get, Injectable, Logger, Module, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Injectable, Logger, Module, Param, Patch, Post, Query, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Employee, Prisma } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Allow, IsBase64, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { RecomputeQueue } from '../attendance/recompute.service';
 import { AuditableActionService } from '../audit/audit.service';
-import { actorOf, AuditActor, AuthUser, CurrentUser, Roles } from '../auth/auth.types';
+import { actorOf, AuditActor, AuthUser, CurrentUser, isHrOrAdmin, Roles } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { runAsSystem } from '../common/rls';
 import { addDays, dbDate, localYmd, ymdOf } from '../common/time';
 import { IsYmd } from '../common/validators';
+import { seedChecklist } from '../hr/checklists';
 import { employmentTypesOf } from '../org/org';
+import { saveSalary } from '../payroll/salary';
 import { TerminalEnrollmentService } from '../terminals/services/terminal-enrollment.service';
 import { TerminalsModule } from '../terminals/terminals.module';
 import { UsersModule } from '../users/users.controller';
 import { UsersService } from '../users/users.service';
+import { coerceField, DATE_KEYS, DIRECTORY_KEYS, FIELD, isRealYmd, MOBILE_PUNCH, SENSITIVE_KEYS } from './fields';
+import { buildTemplate, ImportMode, importColumns, parseImportRows, readWorkbook } from './import';
+import { featuresOf, RequireFeature } from '../common/features';
 
-const MOBILE_PUNCH = ['NEVER', 'REMOTE_DAYS', 'ALWAYS', 'FULL_REMOTE'] as const;
+export { isRealYmd };
 /** Shape only here; the tenant's own list (Settings → employee categories) is checked in validateRefs. */
 const EMPLOYMENT_TYPE = /^[A-Z0-9_]{1,20}$/;
 
-/** YYYY-MM-DD that is also a calendar date (rejects 2026-02-30). */
-export const isRealYmd = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+/**
+ * The directory fields (fields.ts) are whitelisted here and validated by
+ * `directoryData` against the same registry the import uses, so the API and
+ * the spreadsheet accept exactly the same values.
+ */
+export class DirectoryDto {
+  [key: string]: unknown;
+}
+for (const key of DIRECTORY_KEYS) Allow()(DirectoryDto.prototype, key);
 
-export class EmployeeDto {
+export class EmployeeDto extends DirectoryDto {
   @IsString() @MinLength(1) @MaxLength(40) employeeCode: string;
   @IsString() @MinLength(1) @MaxLength(120) fullName: string;
   @IsString() siteId: string;
@@ -43,7 +55,7 @@ export class EmployeeDto {
   @IsOptional() @IsString() shiftId?: string;
 }
 
-export class UpdateEmployeeDto {
+export class UpdateEmployeeDto extends DirectoryDto {
   @IsOptional() @IsString() @MinLength(1) @MaxLength(40) employeeCode?: string;
   @IsOptional() @IsString() @MinLength(1) @MaxLength(120) fullName?: string;
   @IsOptional() @IsString() siteId?: string;
@@ -75,16 +87,49 @@ export class EmployeeQuery {
 
 export class ImportDto {
   /**
-   * CSV with a header row: employeeCode,fullName,siteName,departmentName,managerCode,email,phone,designation,employmentType,joinedOn,mobilePunch.
-   * siteName is not needed when siteId is given.
+   * CSV with a header row naming any columns of GET /employees/import/columns
+   * (labels and common spellings are recognised). An .xlsx goes through
+   * POST /employees/import/read first.
    */
   @IsString() @MaxLength(5_000_000) csv: string;
-  /** Every row joins this site (the import wizard's location step); overrides siteName. */
+  /** CREATE (default): new employees only. UPSERT: update existing codes (blank keeps, "-" clears), add new ones. */
+  @IsOptional() @IsIn(['CREATE', 'UPSERT']) mode?: ImportMode;
+  /** New employees join this site (the import wizard's location step); overrides siteName for them. */
   @IsOptional() @IsString() siteId?: string;
   /** false (default) = validate and preview only. */
   @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean() commit?: boolean;
   @IsOptional() @IsBoolean() biometricConsent?: boolean;
 }
+
+export class ReadWorkbookDto {
+  /** The .xlsx, base64. */
+  @IsBase64() @MaxLength(14_000_000) fileBase64: string;
+}
+
+export class TemplateQuery {
+  @IsOptional() @IsString() siteId?: string;
+  /** true = the workbook filled with current employees, for Update mode. */
+  @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean() prefill?: boolean;
+}
+
+/** Registry-validated directory fields of a create/update body → Prisma data. Throws 400 naming the field. */
+export function directoryData(dto: Record<string, unknown>) {
+  const data: Record<string, unknown> = {};
+  for (const key of DIRECTORY_KEYS) {
+    const v = dto[key];
+    if (v === undefined) continue;
+    if (v === null || v === '') {
+      data[key] = null;
+      continue;
+    }
+    const out = coerceField(FIELD[key], String(v));
+    if ('error' in out) throw new AppError(400, 'INVALID_FIELD', out.error, [{ field: key, message: out.error }]);
+    data[key] = out.value !== null && DATE_KEYS.includes(key) ? dbDate(out.value as string) : out.value;
+  }
+  return data;
+}
+
+const baseOf = (dto: Record<string, unknown>) => Object.fromEntries(Object.entries(dto).filter(([k]) => !DIRECTORY_KEYS.includes(k)));
 
 export class OffboardDto {
   @IsYmd() exitOn: string;
@@ -136,7 +181,10 @@ export class EmployeesService {
     private readonly enrollment: TerminalEnrollmentService,
   ) {}
 
-  private async validateRefs(tenantId: string, d: { siteId?: string; departmentId?: string | null; managerId?: string | null; employmentType?: string }, selfId?: string) {
+  private async validateRefs(user: AuthUser, d: { siteId?: string; departmentId?: string | null; managerId?: string | null; employmentType?: string }, selfId?: string) {
+    const tenantId = user.tenantId;
+    // A site-restricted user cannot place people at sites outside their own.
+    if (d.siteId && user.siteIds.length && !user.siteIds.includes(d.siteId)) throw new AppError(403, 'SITE_FORBIDDEN', 'That site is outside your access');
     if (d.employmentType) {
       const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
       const types = employmentTypesOf(tenant.settings).map((t) => t.code);
@@ -153,13 +201,14 @@ export class EmployeesService {
   }
 
   async create(user: AuthUser, dto: EmployeeDto, actor: AuditActor = actorOf(user)) {
-    await this.validateRefs(user.tenantId, dto);
+    await this.validateRefs(user, dto);
     const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
     const shift = dto.shiftId
       ? await this.prisma.shift.findFirst({ where: { id: dto.shiftId, tenantId: user.tenantId } })
       : await this.prisma.shift.findFirst({ where: { tenantId: user.tenantId, isDefault: true, active: true } });
     if (dto.shiftId && !shift) throw new AppError(400, 'UNKNOWN_SHIFT', 'Unknown shift');
-    const { biometricConsent, shiftId: _s, ...data } = dto;
+    const { biometricConsent, shiftId: _s, ...data } = baseOf(dto) as EmployeeDto;
+    const directory = directoryData(dto);
 
     const employee = await this.audit.run({
       action: 'EMPLOYEE_CREATED',
@@ -170,7 +219,8 @@ export class EmployeesService {
       run: async (tx) => {
         const e = await tx.employee.create({
           data: {
-            ...data,
+            ...(data as any),
+            ...directory,
             employmentType: data.employmentType ?? employmentTypesOf(tenant.settings)[0].code,
             email: data.email?.toLowerCase() ?? null,
             tenantId: user.tenantId,
@@ -191,6 +241,7 @@ export class EmployeesService {
             },
           });
         }
+        await seedChecklist(tx, e, 'ONBOARDING', tenant.settings);
         return e;
       },
     });
@@ -199,8 +250,15 @@ export class EmployeesService {
     return this.present(employee);
   }
 
-  present(e: Employee & Record<string, any>) {
-    return { ...e, joinedOn: ymdOf(e.joinedOn), exitOn: e.exitOn ? ymdOf(e.exitOn) : null };
+  /**
+   * Dates as YYYY-MM-DD. With a viewer, PAN/UAN/ESIC/bank are left out unless
+   * they are HR/admin or the employee themself (a manager sees the rest).
+   */
+  present(e: Employee & Record<string, any>, viewer?: AuthUser) {
+    const out: Record<string, any> = { ...e, joinedOn: ymdOf(e.joinedOn), exitOn: e.exitOn ? ymdOf(e.exitOn) : null };
+    for (const k of DATE_KEYS) if (out[k] instanceof Date) out[k] = ymdOf(out[k]);
+    if (viewer && !isHrOrAdmin(viewer) && viewer.employeeId !== e.id) for (const k of SENSITIVE_KEYS) delete out[k];
+    return out;
   }
 
   async list(user: AuthUser, q: EmployeeQuery) {
@@ -226,23 +284,23 @@ export class EmployeesService {
           : {},
       ],
     };
-    const [items, total] = await Promise.all([
-      this.prisma.employee.findMany({
+    const [items, total] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.employee.findMany({
         where,
         include: { site: { select: { id: true, name: true } }, department: { select: { id: true, name: true } }, manager: { select: { id: true, fullName: true } } },
         orderBy: { fullName: 'asc' },
         skip: (page - 1) * size,
         take: size,
       }),
-      this.prisma.employee.count({ where }),
-    ]);
-    return { items: items.map((e) => this.present(e)), total, page, size };
+      tx.employee.count({ where }),
+    ]));
+    return { items: items.map((e) => this.present(e, user)), total, page, size };
   }
 
   async get(user: AuthUser, id: string) {
-    await this.scope.assertEmployee(user, id);
-    const e = await this.prisma.employee.findUniqueOrThrow({
-      where: { id },
+    // The scope check and the load in one query; 404 (not 403) outside the caller's scope, as assertEmployee.
+    const e = await this.prisma.employee.findFirst({
+      where: { AND: [await this.scope.employeeWhere(user), { id }] },
       include: {
         site: true,
         department: true,
@@ -250,14 +308,15 @@ export class EmployeesService {
         projects: { include: { project: { select: { id: true, name: true } } } },
       },
     });
-    const [profile, schedules, slots, template] = await Promise.all([
-      e.userId ? this.prisma.userProfile.findUnique({ where: { userId: e.userId } }) : null,
-      this.prisma.employeeSchedule.findMany({ where: { employeeId: id }, orderBy: { effectiveFrom: 'desc' }, take: 5 }),
-      this.prisma.terminalUser.findMany({ where: { subjectId: id }, include: { device: { select: { id: true, name: true, serialNo: true, gateName: true } } } }),
-      this.prisma.terminalFaceTemplate.findFirst({ where: { subjectId: id, status: 'active' }, select: { updatedAt: true, sourceDeviceId: true } }),
-    ]);
+    if (!e) throw new AppError(404, 'EMPLOYEE_NOT_FOUND', 'Employee not found');
+    const [profile, schedules, slots, template] = await this.prisma.$transaction((tx) => Promise.all([
+      e.userId ? tx.userProfile.findUnique({ where: { userId: e.userId } }) : null,
+      tx.employeeSchedule.findMany({ where: { employeeId: id }, orderBy: { effectiveFrom: 'desc' }, take: 5 }),
+      tx.terminalUser.findMany({ where: { subjectId: id }, include: { device: { select: { id: true, name: true, serialNo: true, gateName: true } } } }),
+      tx.terminalFaceTemplate.findFirst({ where: { subjectId: id, status: 'active' }, select: { updatedAt: true, sourceDeviceId: true } }),
+    ]));
     return {
-      ...this.present(e),
+      ...this.present(e, user),
       login: profile ? { userId: profile.userId, role: profile.role, status: profile.status, mustChangePassword: profile.mustChangePassword } : null,
       schedules: schedules.map((s) => ({ ...s, effectiveFrom: ymdOf(s.effectiveFrom), effectiveTo: s.effectiveTo ? ymdOf(s.effectiveTo) : null, anchorDate: s.anchorDate ? ymdOf(s.anchorDate) : null })),
       faces: { template, terminals: slots },
@@ -265,9 +324,10 @@ export class EmployeesService {
   }
 
   async update(user: AuthUser, id: string, dto: UpdateEmployeeDto) {
-    const before = await this.scope.assertEmployee(user, id);
-    await this.validateRefs(user.tenantId, dto, id);
-    const { biometricConsent, joinedOn, exitOn, ...rest } = dto;
+    const before = await this.scope.assertOther(user, id);
+    await this.validateRefs(user, dto, id);
+    const { biometricConsent, joinedOn, exitOn, ...rest } = baseOf(dto) as UpdateEmployeeDto;
+    const directory = directoryData(dto);
     const after = await this.audit.run({
       action: 'EMPLOYEE_UPDATED',
       targetType: 'Employee',
@@ -279,7 +339,8 @@ export class EmployeesService {
         tx.employee.update({
           where: { id },
           data: {
-            ...rest,
+            ...(rest as any),
+            ...directory,
             ...(rest.email !== undefined ? { email: rest.email?.toLowerCase() ?? null } : {}),
             ...(joinedOn ? { joinedOn: dbDate(joinedOn) } : {}),
             ...(exitOn !== undefined ? { exitOn: exitOn ? dbDate(exitOn) : null } : {}),
@@ -302,104 +363,175 @@ export class EmployeesService {
   }
 
   /**
-   * Validate → preview → commit. Rows reference sites/departments by name and
-   * managers by code, so HR can fill the sheet without looking up ids.
+   * Validate → preview → commit. Rows reference sites/departments/structures
+   * by name and managers by code, so HR can fill the sheet without looking up
+   * ids. CREATE adds new employees; UPSERT also updates existing ones (blank
+   * cell = keep, "-" = clear) and sets salaries.
    */
   async import(user: AuthUser, dto: ImportDto) {
     const rows = parseCsv(dto.csv);
-    if (rows.length < 2) throw new AppError(400, 'EMPTY_CSV', 'CSV needs a header row and at least one employee');
+    if (rows.length < 2) throw new AppError(400, 'EMPTY_CSV', 'The file needs a header row and at least one employee');
     if (rows.length > 5001) throw new AppError(400, 'CSV_TOO_LARGE', 'At most 5000 employees per import');
-    const header = rows[0].map((h) => h.trim());
-    const col = (name: string) => header.indexOf(name);
-    for (const required of ['employeeCode', 'fullName', 'joinedOn', ...(dto.siteId ? [] : ['siteName'])]) {
-      if (col(required) < 0) throw new AppError(400, 'MISSING_COLUMN', `Missing column ${required}`);
-    }
-    const [sites, departments, existing, tenant] = await Promise.all([
+    const mode = dto.mode ?? 'CREATE';
+    const [sites, departments, existing, tenant, structures, salaries] = await Promise.all([
       this.prisma.site.findMany({ where: { tenantId: user.tenantId } }),
       this.prisma.department.findMany({ where: { tenantId: user.tenantId } }),
       this.prisma.employee.findMany({ where: { tenantId: user.tenantId }, select: { id: true, employeeCode: true } }),
       this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId }, select: { settings: true } }),
+      this.prisma.salaryStructure.findMany({ where: { tenantId: user.tenantId, active: true }, select: { id: true, name: true } }),
+      this.prisma.employeeSalary.findMany({ where: { tenantId: user.tenantId }, orderBy: { effectiveFrom: 'desc' }, select: { employeeId: true, structureId: true } }),
     ]);
-    const categories = employmentTypesOf(tenant.settings);
-    // A cell may hold the code or the label ("Permanent").
-    const categoryOf = (cell: string) =>
-      categories.find((c) => c.code === cell.toUpperCase().replace(/[\s-]+/g, '_') || c.label.toLowerCase() === cell.toLowerCase())?.code;
-    const fixedSite = dto.siteId ? sites.find((s) => s.id === dto.siteId) : undefined;
-    if (dto.siteId && !fixedSite) throw new AppError(400, 'SITE_NOT_FOUND', 'Unknown site');
-    const codes = new Map(existing.map((e) => [e.employeeCode.toLowerCase(), e.id]));
-    const seen = new Set<string>();
+    if (dto.siteId && !sites.some((s) => s.id === dto.siteId)) throw new AppError(400, 'SITE_NOT_FOUND', 'Unknown site');
+    const currentStructure = new Map<string, string>();
+    for (const s of salaries) if (!currentStructure.has(s.employeeId)) currentStructure.set(s.employeeId, s.structureId);
+    const codes = new Map(existing.map((e) => [e.employeeCode.toLowerCase(), { id: e.id, structureId: currentStructure.get(e.id) ?? null }]));
 
-    const parsed = rows.slice(1).map((r, i) => {
-      const get = (name: string) => (col(name) >= 0 ? (r[col(name)] ?? '').trim() : '');
-      // field = the CSV column at fault, so the import wizard can highlight the cell.
-      const errors: { field: string; message: string }[] = [];
-      const fail = (field: string, message: string) => errors.push({ field, message });
-      const code = get('employeeCode');
-      const site = fixedSite ?? sites.find((s) => s.name.toLowerCase() === get('siteName').toLowerCase());
-      const dept = get('departmentName') ? departments.find((d) => d.name.toLowerCase() === get('departmentName').toLowerCase()) : null;
-      const joinedOn = get('joinedOn');
-      const mobilePunch = (get('mobilePunch') || 'NEVER').toUpperCase();
-      const employmentType = get('employmentType') ? categoryOf(get('employmentType')) : categories[0].code;
-      if (!code) fail('employeeCode', 'employeeCode is required');
-      else if (code.length > 40) fail('employeeCode', 'employeeCode is longer than 40 characters');
-      if (codes.has(code.toLowerCase())) fail('employeeCode', 'employeeCode already exists');
-      if (code && seen.has(code.toLowerCase())) fail('employeeCode', 'employeeCode repeated in this file');
-      seen.add(code.toLowerCase());
-      if (!get('fullName')) fail('fullName', 'fullName is required');
-      if (!site) fail('siteName', `unknown site "${get('siteName')}"`);
-      if (get('departmentName') && !dept) fail('departmentName', `unknown department "${get('departmentName')}"`);
-      if (!isRealYmd(joinedOn)) fail('joinedOn', 'joinedOn must be a real date as YYYY-MM-DD');
-      if (!(MOBILE_PUNCH as readonly string[]).includes(mobilePunch)) fail('mobilePunch', `mobilePunch must be ${MOBILE_PUNCH.join(', ')}`);
-      if (!employmentType) fail('employmentType', `employmentType must be ${categories.map((c) => c.code).join(', ')}`);
-      if (get('email') && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(get('email'))) fail('email', 'invalid email');
-      if (get('phone').length > 30) fail('phone', 'phone is longer than 30 characters');
-      return {
-        line: i + 2,
-        errors,
-        managerCode: get('managerCode'),
-        employee: {
-          employeeCode: code,
-          fullName: get('fullName'),
-          siteId: site?.id ?? '',
-          departmentId: dept?.id ?? null,
-          email: get('email') || null,
-          phone: get('phone') || null,
-          designation: get('designation') || null,
-          employmentType,
-          joinedOn,
-          mobilePunch: mobilePunch as EmployeeDto['mobilePunch'],
-          biometricConsent: dto.biometricConsent,
-        } as EmployeeDto,
-      };
+    const { parsed, missing, ignored } = parseImportRows(rows, {
+      mode,
+      fixedSiteId: dto.siteId,
+      sites,
+      departments,
+      existing: codes,
+      categories: employmentTypesOf(tenant.settings),
+      structures,
+      today: localYmd(new Date(), (tenant.settings as any)?.timezone || 'Asia/Kolkata'),
+      noSalary: !featuresOf(tenant.settings).payroll,
     });
-    // Managers may be existing employees or rows in this same file.
-    const fileCodes = new Set(parsed.map((p) => p.employee.employeeCode.toLowerCase()));
-    for (const p of parsed) {
-      if (p.managerCode && !codes.has(p.managerCode.toLowerCase()) && !fileCodes.has(p.managerCode.toLowerCase())) {
-        p.errors.push({ field: 'managerCode', message: `unknown managerCode "${p.managerCode}"` });
-      } else if (p.managerCode && p.managerCode.toLowerCase() === p.employee.employeeCode.toLowerCase()) {
-        p.errors.push({ field: 'managerCode', message: 'an employee cannot manage themselves' });
-      }
-    }
+    if (missing.length) throw new AppError(400, 'MISSING_COLUMN', `Missing column${missing.length > 1 ? 's' : ''} ${missing.map((k) => FIELD[k].label).join(', ')}`);
     const invalid = parsed.filter((p) => p.errors.length);
-    const preview = { total: parsed.length, valid: parsed.length - invalid.length, invalid: invalid.length, errors: invalid.map((p) => ({ line: p.line, errors: p.errors })) };
-    if (!dto.commit) return { committed: false, ...preview, sample: parsed.slice(0, 20).map((p) => ({ line: p.line, ...p.employee, managerCode: p.managerCode })) };
+    const preview = {
+      mode,
+      total: parsed.length,
+      valid: parsed.length - invalid.length,
+      invalid: invalid.length,
+      creates: parsed.filter((p) => p.op === 'CREATE').length,
+      updates: parsed.filter((p) => p.op === 'UPDATE').length,
+      ignoredColumns: ignored,
+      errors: invalid.map((p) => ({ line: p.line, errors: p.errors })),
+    };
+    if (!dto.commit) {
+      return { committed: false, ...preview, sample: parsed.slice(0, 20).map((p) => ({ line: p.line, op: p.op, employeeCode: p.code, ...p.data, managerCode: p.managerCode })) };
+    }
     if (invalid.length) throw new AppError(400, 'IMPORT_INVALID', 'Fix the invalid rows before committing', preview.errors);
 
     const created: string[] = [];
+    const updated: string[] = [];
     for (const p of parsed) {
-      const e = await this.create(user, p.employee);
-      codes.set(p.employee.employeeCode.toLowerCase(), e.id);
-      created.push(e.id);
+      const body = { ...p.data, employeeCode: p.code } as Record<string, any>;
+      if (p.op === 'CREATE') {
+        const e = await this.create(user, { ...body, biometricConsent: dto.biometricConsent } as EmployeeDto);
+        codes.set(p.code.toLowerCase(), { id: e.id, structureId: null });
+        created.push(e.id);
+      } else {
+        // Salary / manager-only rows skip update(), so check scope here too.
+        await this.scope.assertOther(user, p.id!);
+        const { employeeCode: _c, ...changes } = body;
+        if (Object.keys(changes).length) await this.update(user, p.id!, changes as UpdateEmployeeDto);
+        updated.push(p.id!);
+      }
     }
-    for (const p of parsed.filter((x) => x.managerCode)) {
-      await this.prisma.employee.update({
-        where: { id: codes.get(p.employee.employeeCode.toLowerCase())! },
-        data: { managerId: codes.get(p.managerCode.toLowerCase())! },
-      });
+    // Managers and salaries after everyone exists: a manager may be a row further down.
+    for (const p of parsed) {
+      const id = codes.get(p.code.toLowerCase())!.id;
+      if (p.managerCode !== undefined) {
+        await this.prisma.employee.update({ where: { id }, data: { managerId: p.managerCode === null ? null : codes.get(p.managerCode.toLowerCase())!.id } });
+      }
+      if (p.salary) {
+        const salary = p.salary;
+        await this.audit.run({
+          action: 'SALARY_SET',
+          targetType: 'Employee',
+          targetId: id,
+          actor: actorOf(user),
+          tenantId: user.tenantId,
+          payloadFrom: () => ({ ...salary, source: 'import' }),
+          run: (tx) => saveSalary(tx, { tenantId: user.tenantId, employeeId: id, createdBy: user.sub, ...salary }),
+        });
+      }
     }
-    await this.audit.log({ tenantId: user.tenantId, actor: actorOf(user), action: 'EMPLOYEES_IMPORTED', targetType: 'Employee', payload: { count: created.length } });
-    return { committed: true, ...preview, createdIds: created };
+    await this.audit.log({
+      tenantId: user.tenantId,
+      actor: actorOf(user),
+      action: 'EMPLOYEES_IMPORTED',
+      targetType: 'Employee',
+      payload: { mode, created: created.length, updated: updated.length },
+    });
+    return { committed: true, ...preview, createdIds: created, updatedIds: updated };
+  }
+
+  /** The styled .xlsx: dropdowns from this tenant's sites, departments, categories and structures. */
+  /** The import registry (salary columns only with the payroll module). */
+  async importColumns(user: AuthUser) {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId }, select: { settings: true } });
+    return importColumns(!featuresOf(tenant.settings).payroll);
+  }
+
+  async template(user: AuthUser, q: TemplateQuery) {
+    const [tenant, sites, departments, structures, employees] = await Promise.all([
+      this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } }),
+      this.prisma.site.findMany({ where: { tenantId: user.tenantId }, orderBy: { name: 'asc' } }),
+      this.prisma.department.findMany({ where: { tenantId: user.tenantId }, orderBy: { name: 'asc' } }),
+      this.prisma.salaryStructure.findMany({ where: { tenantId: user.tenantId, active: true }, orderBy: { name: 'asc' } }),
+      this.prisma.employee.findMany({
+        where: { AND: [await this.scope.employeeWhere(user), { status: 'ACTIVE' }, q.siteId ? { siteId: q.siteId } : {}] },
+        include: { site: true, department: true, manager: { select: { employeeCode: true } }, salaries: { orderBy: { effectiveFrom: 'desc' }, take: 1, include: { structure: true } } },
+        orderBy: { employeeCode: 'asc' },
+      }),
+    ]);
+    const tz = (tenant.settings as any)?.timezone || 'Asia/Kolkata';
+    const rows = q.prefill
+      ? employees.map((e) => {
+          const p = this.present(e as any);
+          const salary = e.salaries[0];
+          return {
+            ...p,
+            siteName: e.site.name,
+            departmentName: e.department?.name ?? null,
+            managerCode: e.manager?.employeeCode ?? null,
+            salaryStructure: salary?.structure.name ?? null,
+            monthlyGross: salary ? salary.monthlyGross / 100 : null,
+          } as Record<string, string | number | null>;
+        })
+      : undefined;
+    const buf = await buildTemplate({
+      orgName: tenant.name,
+      sites: sites.map((s) => s.name),
+      departments: departments.map((d) => d.name),
+      categories: employmentTypesOf(tenant.settings),
+      structures: structures.map((s) => s.name),
+      managerCodes: employees.map((e) => e.employeeCode),
+      rows,
+      hideSite: Boolean(q.siteId) && !q.prefill,
+      hideSalary: !featuresOf(tenant.settings).payroll,
+      generatedOn: localYmd(new Date(), tz),
+    });
+    const name = `${tenant.slug}-employees-${q.prefill ? 'update' : 'template'}.xlsx`;
+    if (q.prefill) await this.audit.log({ tenantId: user.tenantId, actor: actorOf(user), action: 'EMPLOYEES_EXPORTED', targetType: 'Employee', payload: { count: employees.length } });
+    return new StreamableFile(buf, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', disposition: `attachment; filename="${name}"` });
+  }
+
+  async readWorkbook(dto: ReadWorkbookDto) {
+    const buf = Buffer.from(dto.fileBase64, 'base64');
+    // An .xlsx is a zip, which starts "PK\x03\x04".
+    if (buf.subarray(0, 4).toString('hex') !== '504b0304') throw new AppError(400, 'NOT_XLSX', 'The file is not an Excel workbook (.xlsx)');
+    let rows: string[][];
+    try {
+      rows = await readWorkbook(buf);
+    } catch {
+      throw new AppError(400, 'NOT_XLSX', 'The workbook could not be read — save it as .xlsx and try again');
+    }
+    if (!rows.length) throw new AppError(400, 'NO_HEADER', 'No sheet has an "Employee code" header row');
+    return { rows };
+  }
+
+  /** Everyone active in the tenant (site-scoped logins see their sites): names and reporting lines only. */
+  async orgChart(user: AuthUser) {
+    const people = await this.prisma.employee.findMany({
+      where: { tenantId: user.tenantId, status: 'ACTIVE', ...(user.siteIds.length ? { siteId: { in: user.siteIds } } : {}) },
+      select: { id: true, employeeCode: true, fullName: true, designation: true, managerId: true, department: { select: { name: true } }, site: { select: { name: true } } },
+      orderBy: { fullName: 'asc' },
+    });
+    return people.map((p) => ({ id: p.id, employeeCode: p.employeeCode, fullName: p.fullName, designation: p.designation, managerId: p.managerId, department: p.department?.name ?? null, site: p.site.name }));
   }
 
   /**
@@ -408,7 +540,7 @@ export class EmployeesService {
    * deleted, login removed so the email is free again.
    */
   async offboard(user: AuthUser, id: string, dto: OffboardDto) {
-    const employee = await this.scope.assertEmployee(user, id);
+    const employee = await this.scope.assertOther(user, id);
     if (employee.status === 'EXITED') throw new AppError(409, 'ALREADY_EXITED', 'Employee has already exited');
     if (dto.exitOn < ymdOf(employee.joinedOn)) throw new AppError(400, 'BAD_EXIT_DATE', 'Exit date is before the joining date');
     const actor = actorOf(user);
@@ -425,7 +557,9 @@ export class EmployeesService {
         await tx.terminalFaceTemplate.deleteMany({ where: { subjectId: id } });
         await tx.leaveRequest.updateMany({ where: { employeeId: id, status: 'PENDING' }, data: { status: 'CANCELLED', decisionNote: 'Employee exited' } });
         await tx.remoteWorkRequest.updateMany({ where: { employeeId: id, status: 'PENDING' }, data: { status: 'CANCELLED', decisionNote: 'Employee exited' } });
-        return tx.employee.update({ where: { id }, data: { exitOn: dbDate(dto.exitOn), status: 'EXITED' } });
+        const exitedRow = await tx.employee.update({ where: { id }, data: { exitOn: dbDate(dto.exitOn), status: 'EXITED' } });
+        await seedChecklist(tx, exitedRow, 'OFFBOARDING');
+        return exitedRow;
       },
     });
 
@@ -485,6 +619,32 @@ export class EmployeesController {
   @Roles('ADMIN', 'HR')
   import(@CurrentUser() user: AuthUser, @Body() dto: ImportDto) {
     return this.employees.import(user, dto);
+  }
+
+  /** The import registry: every column, its rule, example and accepted header spellings. */
+  @Get('import/columns')
+  @Roles('ADMIN', 'HR')
+  importColumns(@CurrentUser() user: AuthUser) {
+    return this.employees.importColumns(user);
+  }
+
+  @Get('import/template.xlsx')
+  @Roles('ADMIN', 'HR')
+  template(@CurrentUser() user: AuthUser, @Query() q: TemplateQuery) {
+    return this.employees.template(user, q);
+  }
+
+  /** .xlsx → rows (header first), for the wizard to map and check like a CSV. */
+  @Post('import/read')
+  @Roles('ADMIN', 'HR')
+  read(@Body() dto: ReadWorkbookDto) {
+    return this.employees.readWorkbook(dto);
+  }
+
+  @Get('org-chart')
+  @RequireFeature('hr')
+  orgChart(@CurrentUser() user: AuthUser) {
+    return this.employees.orgChart(user);
   }
 
   @Get(':id')

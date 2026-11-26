@@ -7,7 +7,7 @@ import { AuditableActionService } from '../audit/audit.service';
 import { actorOf, AuthUser, CurrentUser, Roles, SkipMfa } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
-import { PrismaService } from '../common/prisma.service';
+import { BATCH_TIMEOUT_MS, PrismaService } from '../common/prisma.service';
 import { dbDate, diffDays, eachDay, monthRange, ymdOf } from '../common/time';
 import { IsMonth, IsYmd } from '../common/validators';
 import { lateDeductionDays } from './engine/compute-day';
@@ -105,16 +105,16 @@ export class AttendanceController {
       isLate: q.isLate,
       missedPunch: q.missedPunch,
     };
-    const [rows, total] = await Promise.all([
-      this.prisma.attendanceDay.findMany({
+    const [rows, total] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.attendanceDay.findMany({
         where,
         include: { employee: true },
         orderBy: [{ workDate: 'desc' }, { employee: { fullName: 'asc' } }],
         skip: (page - 1) * size,
         take: size,
       }),
-      this.prisma.attendanceDay.count({ where }),
-    ]);
+      tx.attendanceDay.count({ where }),
+    ]));
     return { items: rows.map(presentDay), total, page, size };
   }
 
@@ -126,22 +126,22 @@ export class AttendanceController {
       include: { employee: true },
     });
     if (!day) throw new AppError(404, 'NOT_FOUND', 'Attendance day not found');
-    const [punches, leave, remote, corrections, audit] = await Promise.all([
-      this.prisma.punch.findMany({
+    const [punches, leave, remote, corrections, audit] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.punch.findMany({
         where: { employeeId: day.employeeId, punchedAt: { gte: day.windowStart, lt: day.windowEnd } },
         include: { employee: true, device: true },
         orderBy: { punchedAt: 'asc' },
       }),
-      this.prisma.leaveRequest.findMany({
+      tx.leaveRequest.findMany({
         where: { employeeId: day.employeeId, startDate: { lte: day.workDate }, endDate: { gte: day.workDate }, status: { in: ['PENDING', 'APPROVED'] } },
         include: { leaveType: true },
       }),
-      this.prisma.remoteWorkRequest.findMany({
+      tx.remoteWorkRequest.findMany({
         where: { employeeId: day.employeeId, startDate: { lte: day.workDate }, endDate: { gte: day.workDate }, status: { in: ['PENDING', 'APPROVED'] } },
       }),
-      this.prisma.attendanceCorrection.findMany({ where: { employeeId: day.employeeId, workDate: day.workDate }, orderBy: { createdAt: 'desc' } }),
-      this.prisma.auditLog.findMany({ where: { targetType: 'AttendanceDay', targetId: day.id }, orderBy: { createdAt: 'desc' } }),
-    ]);
+      tx.attendanceCorrection.findMany({ where: { employeeId: day.employeeId, workDate: day.workDate }, orderBy: { createdAt: 'desc' } }),
+      tx.auditLog.findMany({ where: { targetType: 'AttendanceDay', targetId: day.id }, orderBy: { createdAt: 'desc' } }),
+    ]));
     return {
       ...presentDay(day),
       windowStart: day.windowStart,
@@ -165,42 +165,49 @@ export class AttendanceController {
       workDate: { gte: dbDate(from), lte: dbDate(to) },
       employee: await scopedEmployees(this.scope, user, q, from, to),
     };
-    const [byEmployeeStatus, sums, lates, latesOrEarly, byDay, employees, policies] = await Promise.all([
-      this.prisma.attendanceDay.groupBy({ by: ['employeeId', 'status'], where, _count: { _all: true } }),
-      this.prisma.attendanceDay.groupBy({
-        by: ['employeeId'],
+    // One transaction, and one groupBy for counts, sums and late/early tallies (folded below).
+    const [groups, byDay, employees, policies] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.attendanceDay.groupBy({
+        by: ['employeeId', 'status', 'isLate', 'isEarlyExit'],
         where,
+        _count: { _all: true },
         _sum: { workedMinutes: true, overtimeMinutes: true, lateMinutes: true, earlyExitMinutes: true },
       }),
-      this.prisma.attendanceDay.groupBy({ by: ['employeeId'], where: { ...where, isLate: true }, _count: { _all: true } }),
-      // For policies whose late penalty also counts early exits.
-      this.prisma.attendanceDay.groupBy({ by: ['employeeId'], where: { ...where, OR: [{ isLate: true }, { isEarlyExit: true }] }, _count: { _all: true } }),
-      this.prisma.attendanceDay.groupBy({ by: ['workDate', 'status'], where, _count: { _all: true } }),
-      this.prisma.employee.findMany({
+      tx.attendanceDay.groupBy({ by: ['workDate', 'status'], where, _count: { _all: true } }),
+      tx.employee.findMany({
         where: { AND: [where.employee as Prisma.EmployeeWhereInput, { days: { some: { workDate: { gte: dbDate(from), lte: dbDate(to) } } } }] },
         select: { id: true, fullName: true, employeeCode: true, departmentId: true, siteId: true },
         orderBy: { fullName: 'asc' },
       }),
       // The latest day's frozen policy decides the month's late deduction.
-      this.prisma.attendanceDay.findMany({ where, distinct: ['employeeId'], orderBy: [{ employeeId: 'asc' }, { workDate: 'desc' }], select: { employeeId: true, policy: true } }),
-    ]);
+      tx.attendanceDay.findMany({ where, distinct: ['employeeId'], orderBy: [{ employeeId: 'asc' }, { workDate: 'desc' }], select: { employeeId: true, policy: true } }),
+    ]), { timeout: BATCH_TIMEOUT_MS });
 
     const totals = employees.map((e) => {
-      const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
-      for (const r of byEmployeeStatus) if (r.employeeId === e.id) counts[r.status] = r._count._all;
-      const s = sums.find((x) => x.employeeId === e.id)?._sum;
-      const lateDays = lates.find((x) => x.employeeId === e.id)?._count._all ?? 0;
+      const counts: Record<string, number> = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+      let lateDays = 0, lateOrEarlyDays = 0, workedMinutes = 0, overtimeMinutes = 0, lateMinutes = 0, earlyExitMinutes = 0;
+      for (const r of groups) {
+        if (r.employeeId !== e.id) continue;
+        const n = r._count._all;
+        counts[r.status] = (counts[r.status] ?? 0) + n;
+        if (r.isLate) lateDays += n;
+        if (r.isLate || r.isEarlyExit) lateOrEarlyDays += n;
+        workedMinutes += r._sum.workedMinutes ?? 0;
+        overtimeMinutes += r._sum.overtimeMinutes ?? 0;
+        lateMinutes += r._sum.lateMinutes ?? 0;
+        earlyExitMinutes += r._sum.earlyExitMinutes ?? 0;
+      }
       const policy = policies.find((x) => x.employeeId === e.id)?.policy as Record<string, unknown> | undefined;
-      const penalised = policy?.earlyExitCountsAsLate === true ? (latesOrEarly.find((x) => x.employeeId === e.id)?._count._all ?? 0) : lateDays;
+      const penalised = policy?.earlyExitCountsAsLate === true ? lateOrEarlyDays : lateDays;
       return {
         employee: e,
         counts,
         lateDays,
         lateDeductionDays: lateDeductionDays(penalised, policy),
-        workedMinutes: s?.workedMinutes ?? 0,
-        overtimeMinutes: s?.overtimeMinutes ?? 0,
-        lateMinutes: s?.lateMinutes ?? 0,
-        earlyExitMinutes: s?.earlyExitMinutes ?? 0,
+        workedMinutes,
+        overtimeMinutes,
+        lateMinutes,
+        earlyExitMinutes,
       };
     });
     const distribution = eachDay(from, to).map((date) => ({

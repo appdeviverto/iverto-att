@@ -1,0 +1,3625 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`OpenAPI document matches the committed contract snapshot (a diff here is a public API change) 1`] = `
+{
+  "components": {
+    "schemas": {
+      "AttendanceDay": {
+        "properties": {
+          "breakMinutes": {
+            "type": "integer",
+          },
+          "corrected": {
+            "type": "boolean",
+          },
+          "dayType": {
+            "enum": [
+              "WORKING",
+              "WEEKLY_OFF",
+              "HOLIDAY",
+            ],
+            "type": "string",
+          },
+          "earlyExitMinutes": {
+            "type": "integer",
+          },
+          "employeeId": {
+            "type": "string",
+          },
+          "finalizedAt": {
+            "description": "Set when the day closes; it can still change after (corrections)",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "firstIn": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "holidayName": {
+            "nullable": true,
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "isEarlyExit": {
+            "type": "boolean",
+          },
+          "isLate": {
+            "type": "boolean",
+          },
+          "lastOut": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "lateMinutes": {
+            "type": "integer",
+          },
+          "leavePortion": {
+            "example": "1.0",
+            "pattern": "^-?\\d+\\.\\d$",
+            "type": "string",
+          },
+          "leaveTypeId": {
+            "nullable": true,
+            "type": "string",
+          },
+          "missedPunch": {
+            "type": "boolean",
+          },
+          "object": {
+            "enum": [
+              "attendance_day",
+            ],
+            "type": "string",
+          },
+          "overtimeMinutes": {
+            "type": "integer",
+          },
+          "permissionMinutes": {
+            "type": "integer",
+          },
+          "punchCount": {
+            "type": "integer",
+          },
+          "remote": {
+            "type": "boolean",
+          },
+          "scheduledEnd": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "scheduledStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "shiftId": {
+            "nullable": true,
+            "type": "string",
+          },
+          "siteId": {
+            "type": "string",
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "PRESENT",
+              "HALF_DAY",
+              "ABSENT",
+              "ON_LEAVE",
+              "HALF_LEAVE",
+              "REMOTE",
+              "HOLIDAY",
+              "WEEKLY_OFF",
+            ],
+            "type": "string",
+          },
+          "timezone": {
+            "type": "string",
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "workDate": {
+            "format": "date",
+            "type": "string",
+          },
+          "workedMinutes": {
+            "type": "integer",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "employeeId",
+          "siteId",
+          "workDate",
+          "timezone",
+          "dayType",
+          "holidayName",
+          "shiftId",
+          "status",
+          "scheduledStart",
+          "scheduledEnd",
+          "firstIn",
+          "lastOut",
+          "workedMinutes",
+          "breakMinutes",
+          "lateMinutes",
+          "earlyExitMinutes",
+          "overtimeMinutes",
+          "punchCount",
+          "isLate",
+          "isEarlyExit",
+          "missedPunch",
+          "leavePortion",
+          "leaveTypeId",
+          "permissionMinutes",
+          "remote",
+          "corrected",
+          "finalizedAt",
+          "updatedAt",
+        ],
+        "type": "object",
+      },
+      "Deleted": {
+        "properties": {
+          "deleted": {
+            "enum": [
+              true,
+            ],
+            "type": "boolean",
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "object": {
+            "description": "The resource type",
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "deleted",
+          "deletedAt",
+        ],
+        "type": "object",
+      },
+      "Department": {
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string",
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "headEmployeeId": {
+            "nullable": true,
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "name": {
+            "type": "string",
+          },
+          "object": {
+            "enum": [
+              "department",
+            ],
+            "type": "string",
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "name",
+          "code",
+          "headEmployeeId",
+          "createdAt",
+          "updatedAt",
+        ],
+        "type": "object",
+      },
+      "Employee": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "departmentId": {
+            "nullable": true,
+            "type": "string",
+          },
+          "designation": {
+            "nullable": true,
+            "type": "string",
+          },
+          "email": {
+            "nullable": true,
+            "type": "string",
+          },
+          "employeeCode": {
+            "description": "The code HR assigned, shown on terminals and reports",
+            "type": "string",
+          },
+          "employmentType": {
+            "type": "string",
+          },
+          "exitOn": {
+            "format": "date",
+            "nullable": true,
+            "type": "string",
+          },
+          "externalId": {
+            "description": "Your system's id, set by bulk upsert",
+            "nullable": true,
+            "type": "string",
+          },
+          "fullName": {
+            "type": "string",
+          },
+          "id": {
+            "description": "Iverto employee id (stable)",
+            "type": "string",
+          },
+          "joinedOn": {
+            "format": "date",
+            "type": "string",
+          },
+          "managerId": {
+            "nullable": true,
+            "type": "string",
+          },
+          "object": {
+            "enum": [
+              "employee",
+            ],
+            "type": "string",
+          },
+          "phone": {
+            "nullable": true,
+            "type": "string",
+          },
+          "pii": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmployeePii",
+                "description": "Only for keys with PII access; otherwise null",
+              },
+            ],
+            "nullable": true,
+          },
+          "siteId": {
+            "type": "string",
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "EXITED",
+            ],
+            "type": "string",
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "externalId",
+          "employeeCode",
+          "fullName",
+          "email",
+          "phone",
+          "designation",
+          "employmentType",
+          "status",
+          "siteId",
+          "departmentId",
+          "managerId",
+          "joinedOn",
+          "exitOn",
+          "pii",
+          "createdAt",
+          "updatedAt",
+        ],
+        "type": "object",
+      },
+      "EmployeePii": {
+        "properties": {
+          "aadhaarLast4": {
+            "nullable": true,
+            "type": "string",
+          },
+          "bankAccountName": {
+            "nullable": true,
+            "type": "string",
+          },
+          "bankAccountNumber": {
+            "nullable": true,
+            "type": "string",
+          },
+          "bankIfsc": {
+            "nullable": true,
+            "type": "string",
+          },
+          "bankName": {
+            "nullable": true,
+            "type": "string",
+          },
+          "currentAddress": {
+            "nullable": true,
+            "type": "string",
+          },
+          "dateOfBirth": {
+            "format": "date",
+            "nullable": true,
+            "type": "string",
+          },
+          "esicNumber": {
+            "nullable": true,
+            "type": "string",
+          },
+          "gender": {
+            "enum": [
+              "MALE",
+              "FEMALE",
+              "OTHER",
+            ],
+            "nullable": true,
+            "type": "string",
+          },
+          "pan": {
+            "nullable": true,
+            "type": "string",
+          },
+          "permanentAddress": {
+            "nullable": true,
+            "type": "string",
+          },
+          "personalEmail": {
+            "nullable": true,
+            "type": "string",
+          },
+          "uan": {
+            "nullable": true,
+            "type": "string",
+          },
+        },
+        "required": [
+          "dateOfBirth",
+          "gender",
+          "personalEmail",
+          "currentAddress",
+          "permanentAddress",
+          "pan",
+          "aadhaarLast4",
+          "uan",
+          "esicNumber",
+          "bankAccountName",
+          "bankAccountNumber",
+          "bankIfsc",
+          "bankName",
+        ],
+        "type": "object",
+      },
+      "Event": {
+        "properties": {
+          "apiVersion": {
+            "type": "string",
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "data": {
+            "description": "Ids only: fetch the resource for its current state",
+            "type": "object",
+          },
+          "id": {
+            "description": "evt_…; also the webhook-id header",
+            "type": "string",
+          },
+          "type": {
+            "enum": [
+              "punch.created",
+              "attendance.day.finalized",
+              "attendance.day.updated",
+              "leave.request.created",
+              "leave.request.decided",
+              "employee.created",
+              "employee.updated",
+              "employee.exited",
+              "job.completed",
+              "api.alert",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "type",
+          "createdAt",
+          "apiVersion",
+          "data",
+        ],
+        "type": "object",
+      },
+      "Job": {
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "error": {
+            "nullable": true,
+            "properties": {
+              "code": {
+                "type": "string",
+              },
+              "message": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "code",
+              "message",
+            ],
+            "type": "object",
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "object": {
+            "enum": [
+              "job",
+            ],
+            "type": "string",
+          },
+          "progress": {
+            "nullable": true,
+            "properties": {
+              "processed": {
+                "type": "integer",
+              },
+              "total": {
+                "type": "integer",
+              },
+            },
+            "required": [
+              "processed",
+              "total",
+            ],
+            "type": "object",
+          },
+          "result": {
+            "description": "Bulk: { summary, rows }. Report: { format, rowCount, sha256, downloadUrl, urlExpiresAt, expired }",
+            "nullable": true,
+            "type": "object",
+          },
+          "startedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "partially_succeeded",
+              "failed",
+            ],
+            "type": "string",
+          },
+          "type": {
+            "enum": [
+              "employees.bulk_upsert",
+              "report",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "type",
+          "status",
+          "progress",
+          "result",
+          "error",
+          "createdAt",
+          "startedAt",
+          "completedAt",
+          "expiresAt",
+        ],
+        "type": "object",
+      },
+      "LeaveBalance": {
+        "properties": {
+          "available": {
+            "example": "1.0",
+            "nullable": true,
+            "pattern": "^-?\\d+\\.\\d$",
+            "type": "string",
+          },
+          "balance": {
+            "example": "1.0",
+            "nullable": true,
+            "pattern": "^-?\\d+\\.\\d$",
+            "type": "string",
+          },
+          "employeeId": {
+            "type": "string",
+          },
+          "leaveTypeId": {
+            "type": "string",
+          },
+          "leaveYear": {
+            "type": "integer",
+          },
+          "object": {
+            "enum": [
+              "leave_balance",
+            ],
+            "type": "string",
+          },
+          "pending": {
+            "example": "1.0",
+            "nullable": true,
+            "pattern": "^-?\\d+\\.\\d$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "employeeId",
+          "leaveTypeId",
+          "leaveYear",
+          "balance",
+          "pending",
+          "available",
+        ],
+        "type": "object",
+      },
+      "LeaveRequest": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "days": {
+            "example": "1.0",
+            "pattern": "^-?\\d+\\.\\d$",
+            "type": "string",
+          },
+          "decidedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string",
+          },
+          "decisionNote": {
+            "nullable": true,
+            "type": "string",
+          },
+          "employeeId": {
+            "type": "string",
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string",
+          },
+          "endHalf": {
+            "enum": [
+              "FIRST",
+              "SECOND",
+            ],
+            "nullable": true,
+            "type": "string",
+          },
+          "endTime": {
+            "nullable": true,
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "leaveTypeId": {
+            "type": "string",
+          },
+          "minutes": {
+            "nullable": true,
+            "type": "integer",
+          },
+          "object": {
+            "enum": [
+              "leave_request",
+            ],
+            "type": "string",
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string",
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string",
+          },
+          "startHalf": {
+            "enum": [
+              "FIRST",
+              "SECOND",
+            ],
+            "nullable": true,
+            "type": "string",
+          },
+          "startTime": {
+            "description": "HH:mm, hourly types",
+            "nullable": true,
+            "type": "string",
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED",
+              "CANCELLED",
+            ],
+            "type": "string",
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "employeeId",
+          "leaveTypeId",
+          "startDate",
+          "endDate",
+          "startHalf",
+          "endHalf",
+          "startTime",
+          "endTime",
+          "minutes",
+          "days",
+          "reason",
+          "status",
+          "decidedAt",
+          "decisionNote",
+          "createdAt",
+          "updatedAt",
+        ],
+        "type": "object",
+      },
+      "LeaveType": {
+        "properties": {
+          "active": {
+            "type": "boolean",
+          },
+          "allowHalfDay": {
+            "type": "boolean",
+          },
+          "code": {
+            "type": "string",
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "name": {
+            "type": "string",
+          },
+          "object": {
+            "enum": [
+              "leave_type",
+            ],
+            "type": "string",
+          },
+          "paid": {
+            "type": "boolean",
+          },
+          "unit": {
+            "enum": [
+              "DAYS",
+              "HOURS",
+            ],
+            "type": "string",
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "code",
+          "name",
+          "paid",
+          "active",
+          "unit",
+          "allowHalfDay",
+          "createdAt",
+          "updatedAt",
+        ],
+        "type": "object",
+      },
+      "Me": {
+        "properties": {
+          "credits": {
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+              },
+            },
+            "required": [
+              "enabled",
+            ],
+            "type": "object",
+          },
+          "id": {
+            "type": "string",
+          },
+          "limits": {
+            "properties": {
+              "concurrency": {
+                "type": "integer",
+              },
+              "keyPerMinute": {
+                "type": "integer",
+              },
+              "perDay": {
+                "type": "integer",
+              },
+              "perMinute": {
+                "type": "integer",
+              },
+            },
+            "required": [
+              "perMinute",
+              "perDay",
+              "concurrency",
+              "keyPerMinute",
+            ],
+            "type": "object",
+          },
+          "name": {
+            "type": "string",
+          },
+          "object": {
+            "enum": [
+              "api_key",
+            ],
+            "type": "string",
+          },
+          "organisationId": {
+            "type": "string",
+          },
+          "permissions": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "piiAccess": {
+            "type": "boolean",
+          },
+          "siteIds": {
+            "description": "Empty: every site",
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "name",
+          "organisationId",
+          "permissions",
+          "piiAccess",
+          "siteIds",
+          "limits",
+          "credits",
+        ],
+        "type": "object",
+      },
+      "Problem": {
+        "properties": {
+          "code": {
+            "description": "Stable: switch on this",
+            "type": "string",
+          },
+          "errors": {
+            "description": "Details, e.g. field errors",
+            "nullable": true,
+          },
+          "requestId": {
+            "type": "string",
+          },
+          "status": {
+            "type": "integer",
+          },
+          "title": {
+            "type": "string",
+          },
+          "type": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "requestId",
+          "errors",
+        ],
+        "type": "object",
+      },
+      "Punch": {
+        "properties": {
+          "deviceId": {
+            "nullable": true,
+            "type": "string",
+          },
+          "direction": {
+            "description": ""unknown" on two-way gates: the attendance engine pairs first in / last out",
+            "enum": [
+              "in",
+              "out",
+              "unknown",
+            ],
+            "type": "string",
+          },
+          "employeeId": {
+            "description": "null until an unknown terminal user is matched to an employee",
+            "nullable": true,
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PunchLocation",
+              },
+            ],
+            "nullable": true,
+          },
+          "object": {
+            "enum": [
+              "punch",
+            ],
+            "type": "string",
+          },
+          "outcome": {
+            "enum": [
+              "GRANTED",
+              "DENIED",
+              "UNKNOWN",
+            ],
+            "type": "string",
+          },
+          "punchedAt": {
+            "description": "When the person punched (the terminal's clock), not when Iverto received it",
+            "format": "date-time",
+            "type": "string",
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string",
+          },
+          "receivedAt": {
+            "description": "When Iverto stored it: later than punchedAt for logs a terminal buffered while offline",
+            "format": "date-time",
+            "type": "string",
+          },
+          "reviewStatus": {
+            "description": "Mobile punches only",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED",
+            ],
+            "nullable": true,
+            "type": "string",
+          },
+          "siteId": {
+            "type": "string",
+          },
+          "source": {
+            "enum": [
+              "TERMINAL",
+              "MOBILE",
+              "CORRECTION",
+              "MANUAL",
+            ],
+            "type": "string",
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "workDate": {
+            "description": "The attendance day it counts towards; null until computed",
+            "format": "date",
+            "nullable": true,
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "employeeId",
+          "siteId",
+          "deviceId",
+          "punchedAt",
+          "workDate",
+          "source",
+          "direction",
+          "outcome",
+          "reviewStatus",
+          "reason",
+          "location",
+          "receivedAt",
+          "updatedAt",
+        ],
+        "type": "object",
+      },
+      "PunchLocation": {
+        "properties": {
+          "accuracy": {
+            "description": "metres",
+            "nullable": true,
+            "type": "number",
+          },
+          "lat": {
+            "type": "number",
+          },
+          "lng": {
+            "type": "number",
+          },
+        },
+        "required": [
+          "lat",
+          "lng",
+          "accuracy",
+        ],
+        "type": "object",
+      },
+      "Site": {
+        "properties": {
+          "address": {
+            "nullable": true,
+            "type": "string",
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "name": {
+            "type": "string",
+          },
+          "object": {
+            "enum": [
+              "site",
+            ],
+            "type": "string",
+          },
+          "timezone": {
+            "description": "IANA zone",
+            "example": "Asia/Kolkata",
+            "type": "string",
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+        "required": [
+          "object",
+          "id",
+          "name",
+          "address",
+          "timezone",
+          "createdAt",
+          "updatedAt",
+        ],
+        "type": "object",
+      },
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "bearerFormat": "ivk_live_…",
+        "scheme": "bearer",
+        "type": "http",
+      },
+    },
+  },
+  "info": {
+    "description": "Attendance, leave and employee data for payroll, ERP, HR and access-control integrations. Server-to-server only.",
+    "title": "Iverto Attend API",
+    "version": "2026-12-01",
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/attendance-days": {
+      "get": {
+        "description": "Permission: \`attendance:read\` (Read attendance days). Cost: 1 unit.",
+        "operationId": "attendance_days.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": "nextCursor of the previous page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "in": "query",
+            "name": "updatedSince",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "employeeId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "siteId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date",
+              "type": "string",
+            },
+          },
+          {
+            "description": "Inclusive; at most 93 days after from",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date",
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/AttendanceDay",
+                          },
+                          {
+                            "$ref": "#/components/schemas/Deleted",
+                          },
+                        ],
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List attendance days",
+        "tags": [
+          "Attendance",
+        ],
+        "x-cost": 1,
+        "x-permission": "attendance:read",
+      },
+    },
+    "/departments": {
+      "get": {
+        "description": "Permission: \`org:read\` (Read sites and departments). Cost: 1 unit.",
+        "operationId": "departments.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": "nextCursor of the previous page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "in": "query",
+            "name": "updatedSince",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/Department",
+                          },
+                          {
+                            "$ref": "#/components/schemas/Deleted",
+                          },
+                        ],
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List departments",
+        "tags": [
+          "Organisation",
+        ],
+        "x-cost": 1,
+        "x-permission": "org:read",
+      },
+    },
+    "/employees": {
+      "get": {
+        "description": "Permission: \`employees:read\` (Read employees). Cost: 1 unit.",
+        "operationId": "employees.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": "nextCursor of the previous page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "in": "query",
+            "name": "updatedSince",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "ACTIVE",
+                "EXITED",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "siteId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "departmentId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "externalId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "employeeCode",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/Employee",
+                          },
+                          {
+                            "$ref": "#/components/schemas/Deleted",
+                          },
+                        ],
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List employees",
+        "tags": [
+          "Employees",
+        ],
+        "x-cost": 1,
+        "x-permission": "employees:read",
+      },
+    },
+    "/employees/bulk": {
+      "post": {
+        "description": "Matches by \`employeeCode\`, or by \`externalId\` when the code is left out. Validated like the CSV import in the web app. Poll the job or subscribe to \`job.completed\`.
+
+Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 units.",
+        "operationId": "employees.bulk_upsert",
+        "parameters": [
+          {
+            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "onInvalid": {
+                    "description": "skip (default): apply the valid records. reject: write nothing if any record is invalid",
+                    "enum": [
+                      "skip",
+                      "reject",
+                    ],
+                    "type": "string",
+                  },
+                  "records": {
+                    "description": "Fields: \`employeeCode\`, \`externalId\`, \`fullName\`, \`joinedOn\`, \`siteId\`, \`departmentId\`, \`managerEmployeeCode\`, \`designation\`, \`employmentType\`, \`mobilePunch\`, \`email\`, \`phone\`, \`probationEndOn\`, \`confirmedOn\`, \`noticePeriodDays\`; with PII access also date of birth, gender, addresses, emergency contact, \`pan\`, \`aadhaarLast4\`, \`uan\`, \`esicNumber\` and bank fields. A field left out is kept; \`null\` clears it.",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object",
+                    },
+                    "maxItems": 5000,
+                    "minItems": 1,
+                    "type": "array",
+                  },
+                  "validateOnly": {
+                    "description": "Report what would happen; write nothing",
+                    "type": "boolean",
+                  },
+                },
+                "required": [
+                  "records",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job",
+                },
+              },
+            },
+            "description": "Accepted: a job",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Create or update up to 1,000 employees (async job)",
+        "tags": [
+          "Employees",
+        ],
+        "x-cost": 10,
+        "x-permission": "employees:write",
+      },
+    },
+    "/employees/{id}": {
+      "get": {
+        "description": "Permission: \`employees:read\` (Read employees). Cost: 1 unit.",
+        "operationId": "employees.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Employee",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Get an employee",
+        "tags": [
+          "Employees",
+        ],
+        "x-cost": 1,
+        "x-permission": "employees:read",
+      },
+    },
+    "/events": {
+      "get": {
+        "description": "What webhooks deliver, for consumers that poll or missed deliveries. Kept 30 days; only event types the key's permissions cover.
+
+Any valid key. Cost: 0 units.",
+        "operationId": "events.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "enum": [
+                "punch.created",
+                "attendance.day.finalized",
+                "attendance.day.updated",
+                "leave.request.created",
+                "leave.request.decided",
+                "employee.created",
+                "employee.updated",
+                "employee.exited",
+                "job.completed",
+                "api.alert",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "description": "Start when there is no cursor",
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Event",
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List recent events (last 30 days) the key may read",
+        "tags": [
+          "Events",
+        ],
+        "x-cost": 0,
+        "x-permission": null,
+      },
+    },
+    "/jobs": {
+      "get": {
+        "description": "Any valid key. Cost: 1 unit.",
+        "operationId": "jobs.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "enum": [
+                "employees.bulk_upsert",
+                "report",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/Job",
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List jobs the key may see",
+        "tags": [
+          "Jobs",
+        ],
+        "x-cost": 1,
+        "x-permission": null,
+      },
+    },
+    "/jobs/{id}": {
+      "get": {
+        "description": "Report jobs include a download URL valid for 15 minutes, minted on every call.
+
+Any valid key. Cost: 1 unit.",
+        "operationId": "jobs.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Get a job (report jobs include a fresh download URL)",
+        "tags": [
+          "Jobs",
+        ],
+        "x-cost": 1,
+        "x-permission": null,
+      },
+    },
+    "/leave-balances": {
+      "get": {
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "operationId": "leave_balances.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "year",
+            "schema": {
+              "description": "Leave year (starts in April); default: current",
+              "type": "integer",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "employeeId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/LeaveBalance",
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List leave balances",
+        "tags": [
+          "Leave",
+        ],
+        "x-cost": 1,
+        "x-permission": "leave:read",
+      },
+    },
+    "/leave-requests": {
+      "get": {
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "operationId": "leave_requests.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": "nextCursor of the previous page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "in": "query",
+            "name": "updatedSince",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "employeeId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED",
+                "CANCELLED",
+              ],
+              "type": "string",
+            },
+          },
+          {
+            "description": "Requests overlapping from…to",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date",
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date",
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/LeaveRequest",
+                          },
+                          {
+                            "$ref": "#/components/schemas/Deleted",
+                          },
+                        ],
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List leave requests",
+        "tags": [
+          "Leave",
+        ],
+        "x-cost": 1,
+        "x-permission": "leave:read",
+      },
+    },
+    "/leave-requests/{id}": {
+      "get": {
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "operationId": "leave_requests.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaveRequest",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Get a leave request",
+        "tags": [
+          "Leave",
+        ],
+        "x-cost": 1,
+        "x-permission": "leave:read",
+      },
+    },
+    "/leave-requests/{id}/approve": {
+      "post": {
+        "description": "Counts as a manager approval: types that need HR approval still wait for HR.
+
+Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit.",
+        "operationId": "leave_requests.approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "note": {
+                    "maxLength": 1000,
+                    "type": "string",
+                  },
+                },
+                "required": [],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaveRequest",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Approve a leave request",
+        "tags": [
+          "Leave",
+        ],
+        "x-cost": 1,
+        "x-permission": "leave:approve",
+      },
+    },
+    "/leave-requests/{id}/reject": {
+      "post": {
+        "description": "Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit.",
+        "operationId": "leave_requests.reject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "note": {
+                    "maxLength": 1000,
+                    "minLength": 3,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "note",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaveRequest",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Reject a leave request",
+        "tags": [
+          "Leave",
+        ],
+        "x-cost": 1,
+        "x-permission": "leave:approve",
+      },
+    },
+    "/leave-types": {
+      "get": {
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "operationId": "leave_types.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": "nextCursor of the previous page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "in": "query",
+            "name": "updatedSince",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/LeaveType",
+                          },
+                          {
+                            "$ref": "#/components/schemas/Deleted",
+                          },
+                        ],
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List leave types",
+        "tags": [
+          "Leave",
+        ],
+        "x-cost": 1,
+        "x-permission": "leave:read",
+      },
+    },
+    "/me": {
+      "get": {
+        "description": "Any valid key. Cost: 1 unit.",
+        "operationId": "me.get",
+        "parameters": [
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "The calling key, its effective permissions and limits",
+        "tags": [
+          "Key",
+        ],
+        "x-cost": 1,
+        "x-permission": null,
+      },
+    },
+    "/punches": {
+      "get": {
+        "description": "Historical punches by \`from\`/\`to\` (when people punched). To catch punches a terminal uploads late (it buffers while offline and sends the backlog on reconnect, with the original punch times), sync with \`updatedSince\`/\`cursor\`, which follow when Iverto stored or changed each punch.
+
+Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
+        "operationId": "punches.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": "nextCursor of the previous page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "in": "query",
+            "name": "updatedSince",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "employeeId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "siteId",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "punchedAt ≥ from",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": "punchedAt < to",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/Punch",
+                          },
+                          {
+                            "$ref": "#/components/schemas/Deleted",
+                          },
+                        ],
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List punches",
+        "tags": [
+          "Punches",
+        ],
+        "x-cost": 1,
+        "x-permission": "punches:read",
+      },
+      "post": {
+        "description": "A manual punch (source MANUAL), audited with the key as the actor. Refused in closed payroll periods.
+
+Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
+        "operationId": "punches.create",
+        "parameters": [
+          {
+            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "direction": {
+                    "enum": [
+                      "in",
+                      "out",
+                    ],
+                    "type": "string",
+                  },
+                  "employeeId": {
+                    "type": "string",
+                  },
+                  "punchedAt": {
+                    "format": "date-time",
+                    "type": "string",
+                  },
+                  "reason": {
+                    "maxLength": 500,
+                    "minLength": 3,
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "employeeId",
+                  "punchedAt",
+                  "direction",
+                  "reason",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Punch",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Record a punch",
+        "tags": [
+          "Punches",
+        ],
+        "x-cost": 1,
+        "x-permission": "punches:write",
+      },
+    },
+    "/reports": {
+      "post": {
+        "description": "Permission: \`reports:generate\` (Generate attendance reports (CSV / PDF)). Cost: 25 units.",
+        "operationId": "reports.create",
+        "parameters": [
+          {
+            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "filters": {
+                    "properties": {
+                      "dateFrom": {
+                        "format": "date",
+                        "type": "string",
+                      },
+                      "dateTo": {
+                        "format": "date",
+                        "type": "string",
+                      },
+                      "departmentIds": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "employeeIds": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "groupBy": {
+                        "enum": [
+                          "none",
+                          "department",
+                          "site",
+                        ],
+                        "type": "string",
+                      },
+                      "siteIds": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                    },
+                    "required": [
+                      "dateFrom",
+                      "dateTo",
+                    ],
+                    "type": "object",
+                  },
+                  "format": {
+                    "enum": [
+                      "csv",
+                      "pdf",
+                    ],
+                    "type": "string",
+                  },
+                  "type": {
+                    "enum": [
+                      "daily-summary",
+                      "muster-roll",
+                      "payable-days",
+                      "timesheet",
+                      "punch-log",
+                      "late-early",
+                      "overtime",
+                      "leave",
+                      "absenteeism",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "type",
+                  "format",
+                  "filters",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "required": true,
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job",
+                },
+              },
+            },
+            "description": "Accepted: a job",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "Generate a report file (async job)",
+        "tags": [
+          "Jobs",
+        ],
+        "x-cost": 25,
+        "x-permission": "reports:generate",
+      },
+    },
+    "/sites": {
+      "get": {
+        "description": "Permission: \`org:read\` (Read sites and departments). Cost: 1 unit.",
+        "operationId": "sites.list",
+        "parameters": [
+          {
+            "description": undefined,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer",
+            },
+          },
+          {
+            "description": "nextCursor of the previous page",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "in": "query",
+            "name": "updatedSince",
+            "schema": {
+              "format": "date-time",
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): unix seconds",
+            "in": "header",
+            "name": "Iverto-Timestamp",
+            "schema": {
+              "type": "string",
+            },
+          },
+          {
+            "description": "Request signing (optional): base64 Ed25519 signature",
+            "in": "header",
+            "name": "Iverto-Signature",
+            "schema": {
+              "type": "string",
+            },
+          },
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/Site",
+                          },
+                          {
+                            "$ref": "#/components/schemas/Deleted",
+                          },
+                        ],
+                      },
+                      "type": "array",
+                    },
+                    "hasMore": {
+                      "type": "boolean",
+                    },
+                    "nextCursor": {
+                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "nullable": true,
+                      "type": "string",
+                    },
+                    "object": {
+                      "enum": [
+                        "list",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "object",
+                    "data",
+                    "hasMore",
+                    "nextCursor",
+                  ],
+                  "type": "object",
+                },
+              },
+            },
+            "description": "OK",
+          },
+          "304": {
+            "description": "Not modified (If-None-Match); costs nothing",
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Error (problem+json)",
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem",
+                },
+              },
+            },
+            "description": "Server error (problem+json)",
+          },
+        },
+        "summary": "List sites",
+        "tags": [
+          "Organisation",
+        ],
+        "x-cost": 1,
+        "x-permission": "org:read",
+      },
+    },
+  },
+  "security": [
+    {
+      "apiKey": [],
+    },
+  ],
+  "servers": [
+    {
+      "url": "https://api.iverto.ai/v1",
+    },
+  ],
+  "tags": [
+    {
+      "description": "The calling key",
+      "name": "Key",
+    },
+    {
+      "description": "Sites and departments",
+      "name": "Organisation",
+    },
+    {
+      "description": "The employee directory",
+      "name": "Employees",
+    },
+    {
+      "description": "Raw punches from terminals, mobile, corrections and manual entry",
+      "name": "Punches",
+    },
+    {
+      "description": "Computed attendance days",
+      "name": "Attendance",
+    },
+    {
+      "description": "Leave types, requests and balances",
+      "name": "Leave",
+    },
+    {
+      "description": "The event log behind webhooks",
+      "name": "Events",
+    },
+    {
+      "description": "Bulk writes and reports, run in the background",
+      "name": "Jobs",
+    },
+  ],
+  "x-webhooks": {
+    "api.alert": {
+      "post": {
+        "description": "A usage alert is raised (rate limits, quota, credits, key expiry or disablement, error spike).  Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "api.alert",
+      },
+    },
+    "attendance.day.finalized": {
+      "post": {
+        "description": "An employee's day closes. Needs \`attendance:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "attendance.day.finalized",
+      },
+    },
+    "attendance.day.updated": {
+      "post": {
+        "description": "A closed day changes (correction, recompute). Needs \`attendance:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "attendance.day.updated",
+      },
+    },
+    "employee.created": {
+      "post": {
+        "description": "An employee is added. Needs \`employees:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "employee.created",
+      },
+    },
+    "employee.exited": {
+      "post": {
+        "description": "An employee is marked as exited. Needs \`employees:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "employee.exited",
+      },
+    },
+    "employee.updated": {
+      "post": {
+        "description": "An employee's record changes. Needs \`employees:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "employee.updated",
+      },
+    },
+    "job.completed": {
+      "post": {
+        "description": "A bulk or report job finishes.  Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "job.completed",
+      },
+    },
+    "leave.request.created": {
+      "post": {
+        "description": "A leave request is submitted. Needs \`leave:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "leave.request.created",
+      },
+    },
+    "leave.request.decided": {
+      "post": {
+        "description": "A leave request is approved, rejected or cancelled. Needs \`leave:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "leave.request.decided",
+      },
+    },
+    "punch.created": {
+      "post": {
+        "description": "A punch is recorded (terminal, mobile, web or API). Needs \`punches:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event",
+              },
+            },
+          },
+        },
+        "responses": {
+          "200": {
+            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+          },
+        },
+        "summary": "punch.created",
+      },
+    },
+  },
+}
+`;

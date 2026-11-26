@@ -1,14 +1,15 @@
 import {
-  Badge, Breadcrumbs, Button, Callout, Card, CenteredSpinner, CopyField, DataTable, DateInput, DescriptionList, EmptyState,
+  Badge, Breadcrumbs, Button, Callout, CenteredSpinner, CopyField, DataTable, DateInput, EmptyState,
   PageHeader, Pagination, PillTabs, SearchInput, Textarea,
 } from '@iverto-org/core-ui';
-import { KeyRound, Pencil, Plus, Upload, UserMinus } from 'lucide-react';
+import { KeyRound, Network, Pencil, Plus, Upload, UserMinus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { DayDrawer } from '../components/DayDrawer';
+import { AssetsTab, ChecklistTab, directoryKeys, DocumentsTab, ProfileSections, SalaryTab, useDirectoryFieldSpecs } from '../components/EmployeeHr';
 import { ImportEmployees } from '../components/ImportEmployees';
 import { clean, DepartmentSelect, EmployeePicker, Fields, FormModal, Panel, Pick, SiteSelect, useForm, type FieldSpec } from '../components/ui';
-import { patch, post, REFERENCE, useAction, useApi, useDepartments, useEmploymentTypes, useShifts, useSites, type Page } from '../lib/api';
+import { patch, post, REFERENCE, useAction, useApi, useFeatures, useDepartments, useEmploymentTypes, useImportColumns, useShifts, useSites, type Page } from '../lib/api';
 import { isHr, useMe } from '../lib/auth';
 import { addDays, hm, REQUEST_STATUS, ROLE_LABEL, ROLES, StatusBadge, today, WEEKDAYS } from '../lib/format';
 import type { Day } from '../lib/live';
@@ -47,11 +48,21 @@ const BLANK = { fullName: '', employeeCode: '', siteId: '', departmentId: '', ma
 function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () => void }) {
   const navigate = useNavigate();
   const fields = useEmployeeFields(!employee);
+  const sections = useDirectoryFieldSpecs();
+  const dirKeys = directoryKeys(useImportColumns().data ?? []);
   const [f, , setF] = useForm<Record<string, any>>(employee ? { ...BLANK, ...employee, biometricConsent: Boolean(employee.biometricConsentAt), departmentId: employee.departmentId ?? '', managerId: employee.managerId ?? '' } : BLANK);
   const set = (k: string) => (v: unknown) => setF((x) => ({ ...x, [k]: v }));
   const save = useAction(
     () => {
       const body = clean(Object.fromEntries(Object.keys(BLANK).filter((k) => !employee || k !== 'shiftId').map((k) => [k, f[k]])));
+      // Directory fields: only the ones changed here are sent, so a save never overwrites a newer
+      // value (profile approval, import, API) with what the form loaded. An emptied field clears it.
+      for (const k of dirKeys) {
+        const v = f[k] ?? '';
+        const was = employee ? ((employee as Record<string, any>)[k] ?? '') : '';
+        if (String(v) === String(was)) continue;
+        body[k] = v === '' ? null : v;
+      }
       return employee ? patch<Employee>(`/employees/${employee.id}`, body) : post<Employee>('/employees', body);
     },
     { invalidate: ['/employees'], success: employee ? 'Employee updated' : 'Employee added', onSuccess: (e) => { onClose(); if (!employee) navigate(`/employees/${e.id}`); } },
@@ -60,6 +71,12 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     <FormModal open size="drawer" onClose={onClose} title={employee ? 'Edit employee' : 'Add employee'} submitLabel={employee ? 'Save changes' : 'Add employee'} saving={save.isPending} onSubmit={() => save.mutate()}>
       <Fields specs={fields} form={f} set={set} />
       <EmployeePicker label="Manager" value={f.managerId} onChange={set('managerId')} />
+      {sections.map(({ section, specs }) => (
+        <details key={section} className="group rounded-2xl border border-line-soft px-4 py-3 open:pb-4">
+          <summary className="cursor-pointer select-none font-semibold text-fg">{section}</summary>
+          <div className="mt-3 space-y-4"><Fields specs={specs} form={f} set={set} /></div>
+        </details>
+      ))}
     </FormModal>
   );
 }
@@ -67,6 +84,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
 export function Employees() {
   const me = useMe();
   const navigate = useNavigate();
+  const features = useFeatures();
   const [q, setQ] = useState('');
   const [siteId, setSite] = useState('');
   const [departmentId, setDept] = useState('');
@@ -89,7 +107,8 @@ export function Employees() {
     <div className="space-y-6">
       <PageHeader title="Employees" subtitle={data ? `${data.total} ${status === 'ACTIVE' ? 'active' : 'exited'}` : undefined}
         actions={isHr(me) && <>
-          <Button variant="secondary" leftIcon={<Upload size={16} />} onClick={() => setModal('import')}>Import CSV</Button>
+          {features.hr && <Button variant="secondary" leftIcon={<Network size={16} />} onClick={() => navigate('/hr/org-chart')}>Org chart</Button>}
+          <Button variant="secondary" leftIcon={<Upload size={16} />} onClick={() => setModal('import')}>Import / update</Button>
           <Button leftIcon={<Plus size={16} />} onClick={() => setModal('add')}>Add employee</Button>
         </>}
         filters={
@@ -103,7 +122,7 @@ export function Employees() {
         } />
       <Panel>
         <DataTable rows={data?.items ?? []} getRowKey={(r) => r.id} loading={isLoading} onRowClick={(r) => navigate(`/employees/${r.id}`)}
-          empty={<EmptyState title={q ? 'No one matches that search' : 'No employees yet'} description={isHr(me) && !q ? 'Add people one by one or import a CSV.' : undefined} />}
+          empty={<EmptyState title={q ? 'No one matches that search' : 'No employees yet'} description={isHr(me) && !q ? 'Add people one by one or import an Excel sheet.' : undefined} />}
           columns={[
             { key: 'name', header: 'Employee', render: (r) => <div><div className="font-semibold text-fg">{r.fullName}</div><div className="font-mono text-xs text-fg-subtle">{r.employeeCode}</div></div> },
             { key: 'designation', header: 'Role', render: (r) => <span className="flex items-center gap-1.5">{r.designation ?? '—'}{internsEnabled && r.employmentType === 'INTERN' && <Badge tone="info">Intern</Badge>}</span> },
@@ -130,6 +149,8 @@ export function EmployeeDetail() {
   const me = useMe();
   const categories = useEmploymentTypes();
   const hr = isHr(me);
+  const self = me.employeeId === id;
+  const features = useFeatures();
   const [tab, setTab] = useState('attendance');
   const [modal, setModal] = useState<'edit' | 'access' | 'offboard' | 'schedule' | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -160,17 +181,25 @@ export function EmployeeDetail() {
         </Callout>
       )}
       <PillTabs label="Section" value={tab} onChange={setTab} tabs={[
-        { value: 'attendance', label: 'Attendance' }, { value: 'profile', label: 'Profile' }, { value: 'leave', label: 'Leave' }, { value: 'schedule', label: 'Schedule' }, { value: 'faces', label: 'Faces' },
+        { value: 'attendance', label: 'Attendance' }, { value: 'profile', label: 'Profile' },
+        ...(features.hr && (hr || self) ? [{ value: 'documents', label: 'Documents' }] : []),
+        ...(features.hr ? [{ value: 'checklist', label: 'Checklist' }, { value: 'assets', label: 'Assets' }] : []),
+        ...(features.payroll && (hr || self) ? [{ value: 'salary', label: 'Salary' }] : []),
+        { value: 'leave', label: 'Leave' }, { value: 'schedule', label: 'Schedule' }, { value: 'faces', label: 'Faces' },
       ]} />
 
       {tab === 'profile' && (
-        <Card><DescriptionList columns={3} items={[
+        <ProfileSections employee={e} base={[
           { term: 'Department', value: e.department?.name }, { term: 'Manager', value: e.manager?.fullName }, { term: 'Employment', value: categories.find((c) => c.code === e.employmentType)?.label ?? e.employmentType },
           { term: 'Email', value: e.email }, { term: 'Phone', value: e.phone }, { term: 'Joined', value: e.joinedOn },
           { term: 'Mobile punching', value: e.mobilePunch.replace('_', ' ').toLowerCase() }, { term: 'Biometric consent', value: e.biometricConsentAt ? `Recorded ${e.biometricConsentAt.slice(0, 10)}` : 'Not recorded' },
           { term: 'App login', value: e.login ? <span className="flex gap-2">{ROLE_LABEL[e.login.role]} <StatusBadge value={e.login.status} map={REQUEST_STATUS} /></span> : 'No login' },
-        ]} /></Card>
+        ]} />
       )}
+      {tab === 'documents' && <DocumentsTab employeeId={e.id} hr={hr} />}
+      {tab === 'checklist' && <ChecklistTab employeeId={e.id} hr={hr} />}
+      {tab === 'assets' && <AssetsTab employeeId={e.id} hr={hr} />}
+      {tab === 'salary' && <SalaryTab employeeId={e.id} hr={hr} />}
       {tab === 'attendance' && (
         <Panel>
           <DataTable rows={days.data?.items ?? []} getRowKey={(r) => r.id} loading={days.isLoading} onRowClick={(r) => setDayId(r.id)} empty={<EmptyState title="No attendance in the last 30 days" />}

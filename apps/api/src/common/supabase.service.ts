@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { AppError } from './errors';
+import { isSafeStorageKey } from './uploads';
 
 export const BUCKETS = {
   reports: () => process.env.STORAGE_BUCKET_REPORTS || 'reports',
@@ -111,6 +113,7 @@ export class SupabaseService {
   }
 
   async signedUrl(bucket: string, path: string, expiresInSeconds = 300, downloadName?: string) {
+    if (!isSafeStorageKey(path)) throw new AppError(400, 'BAD_STORAGE_KEY', 'Invalid file reference');
     const { data, error } = await this.admin.storage
       .from(bucket)
       .createSignedUrl(path, expiresInSeconds, downloadName ? { download: downloadName } : undefined);

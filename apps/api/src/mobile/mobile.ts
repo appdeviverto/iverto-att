@@ -26,6 +26,7 @@ import { AllowPendingPassword, AuthUser, CurrentUser, Roles, SkipMfa } from '../
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
+import { decodeUpload, EXT, UploadDto } from '../common/uploads';
 import { BUCKETS, SupabaseService } from '../common/supabase.service';
 import { addDays, dbDate, formatLocal, leaveYearOf, leaveYearRange, localYmd, monthRange, ymdOf } from '../common/time';
 import { IsMonth, IsYmd } from '../common/validators';
@@ -40,6 +41,12 @@ import { ScheduleModule, ScheduleService } from '../schedule/schedule';
 import { ChangePasswordDto, UsersModule } from '../users/users.controller';
 import { UsersService } from '../users/users.service';
 import { IdempotencyInterceptor } from './idempotency';
+import { MobileHrController } from './mobile-hr';
+import { assertFeature, featuresOf } from '../common/features';
+import { ExpensesService } from '../hr/expenses';
+import { EmployeesModule } from '../employees/employees';
+import { HrModule } from '../hr/hr.module';
+import { PayrollModule } from '../payroll/payroll';
 import { FieldVisitDto, FieldVisitQuery, FieldVisitsModule, FieldVisitsService } from '../field-visits/field-visits';
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
@@ -77,25 +84,12 @@ export class DateQuery {
 }
 
 export class ApprovalsQuery extends CursorQuery {
-  @IsIn(['leave', 'correction', 'remote']) type: 'leave' | 'correction' | 'remote';
+  @IsIn(['leave', 'correction', 'remote', 'expense']) type: 'leave' | 'correction' | 'remote' | 'expense';
 }
 
 export class MobileLeaveListQuery extends CursorQuery {
   @IsOptional() @IsIn(['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED']) status?: string;
 }
-
-export class UploadDto {
-  @IsString() @Matches(/^[\w .()-]{1,120}$/, { message: 'fileName has invalid characters' }) fileName: string;
-  @IsIn(['image/jpeg', 'image/png', 'application/pdf']) contentType: 'image/jpeg' | 'image/png' | 'application/pdf';
-  @IsBase64() dataBase64: string;
-}
-
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const MAGIC: Record<string, (b: Buffer) => boolean> = {
-  'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8,
-  'image/png': (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-  'application/pdf': (b) => b.subarray(0, 5).toString() === '%PDF-',
-};
 
 // ── Service ─────────────────────────────────────────────────────────────────
 
@@ -110,14 +104,16 @@ export class MobileService {
   ) {}
 
   async me(user: AuthUser) {
-    const profile = await this.prisma.userProfile.findUnique({ where: { userId: user.sub } });
-    const employee = user.employeeId
-      ? await this.prisma.employee.findFirst({
-          where: { id: user.employeeId, tenantId: user.tenantId },
-          include: { site: true, department: true, manager: { select: { id: true, fullName: true, phone: true, email: true } } },
-        })
-      : null;
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: user.tenantId } });
+    const [profile, employee, tenant] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.userProfile.findUnique({ where: { userId: user.sub } }),
+      user.employeeId
+        ? tx.employee.findFirst({
+            where: { id: user.employeeId, tenantId: user.tenantId },
+            include: { site: true, department: true, manager: { select: { id: true, fullName: true, phone: true, email: true } } },
+          })
+        : null,
+      tx.tenant.findUnique({ where: { id: user.tenantId } }),
+    ]));
     const settings = (tenant?.settings ?? {}) as Record<string, any>;
     return {
       userId: user.sub,
@@ -146,6 +142,8 @@ export class MobileService {
         remoteWork: Boolean(employee),
         leave: Boolean(employee) && !(employee!.employmentType === 'INTERN' && settings.internsEnabled === true),
         fieldVisits: Boolean(employee),
+        // Modules this organisation has; hide the HR / payroll screens when false (their routes answer 403 FEATURE_DISABLED).
+        ...featuresOf(settings),
       },
     };
   }
@@ -185,27 +183,30 @@ export class MobileService {
     const tz = employee.site.timezone;
     const now = new Date();
     // Attendance "today" is the work date whose window contains now (a night shift is still yesterday's).
-    const open = await this.prisma.attendanceDay.findFirst({
-      where: { employeeId: employee.id, windowStart: { lte: now }, windowEnd: { gt: now } },
+    // The open window and today's calendar row in one read; todayRow only when neither exists yet.
+    const date = localYmd(now, tz);
+    const rows = await this.prisma.attendanceDay.findMany({
+      where: { employeeId: employee.id, OR: [{ windowStart: { lte: now }, windowEnd: { gt: now } }, { workDate: dbDate(date) }] },
     });
-    const day = open ?? (await this.todayRow(employee, localYmd(now, tz)));
-    const [shifts, next, punches, remote] = await Promise.all([
-      this.prisma.shift.findMany({ where: { tenantId: user.tenantId }, select: { id: true, name: true, code: true, color: true } }),
-      this.prisma.attendanceDay.findFirst({
+    const open = rows.find((d) => d.windowStart <= now && d.windowEnd > now);
+    const day = open ?? rows.find((d) => ymdOf(d.workDate) === date) ?? (await this.todayRow(employee, date));
+    const [shifts, next, punches, remote] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.shift.findMany({ where: { tenantId: user.tenantId }, select: { id: true, name: true, code: true, color: true } }),
+      tx.attendanceDay.findFirst({
         where: { employeeId: employee.id, workDate: { gt: day?.workDate ?? dbDate(localYmd(now, tz)) }, dayType: 'WORKING' },
         orderBy: { workDate: 'asc' },
       }),
       day
-        ? this.prisma.punch.findMany({
+        ? tx.punch.findMany({
             where: { employeeId: employee.id, punchedAt: { gte: day.windowStart, lt: day.windowEnd } },
             include: { device: true },
             orderBy: { punchedAt: 'asc' },
           })
         : [],
-      this.prisma.remoteWorkRequest.findFirst({
+      tx.remoteWorkRequest.findFirst({
         where: { employeeId: employee.id, status: 'APPROVED', startDate: { lte: dbDate(localYmd(now, tz)) }, endDate: { gte: dbDate(localYmd(now, tz)) } },
       }),
-    ]);
+    ]));
     const shiftOf = (id?: string | null) => shifts.find((s) => s.id === id) ?? null;
     return {
       timezone: tz,
@@ -271,15 +272,15 @@ export class MobileService {
     if (!employee) throw new AppError(404, 'NOT_FOUND', 'No attendance for that day');
     const day = await this.prisma.attendanceDay.findUnique({ where: { employeeId_workDate: { employeeId: employee.id, workDate: dbDate(date) } } });
     if (!day) throw new AppError(404, 'NOT_FOUND', 'No attendance for that day');
-    const [punches, corrections, shift] = await Promise.all([
-      this.prisma.punch.findMany({
+    const [punches, corrections, shift] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.punch.findMany({
         where: { employeeId: employee.id, punchedAt: { gte: day.windowStart, lt: day.windowEnd } },
         include: { device: true },
         orderBy: { punchedAt: 'asc' },
       }),
-      this.prisma.attendanceCorrection.findMany({ where: { employeeId: employee.id, workDate: day.workDate }, orderBy: { createdAt: 'desc' } }),
-      day.shiftId ? this.prisma.shift.findUnique({ where: { id: day.shiftId }, select: { id: true, name: true, code: true, color: true } }) : null,
-    ]);
+      tx.attendanceCorrection.findMany({ where: { employeeId: employee.id, workDate: day.workDate }, orderBy: { createdAt: 'desc' } }),
+      day.shiftId ? tx.shift.findUnique({ where: { id: day.shiftId }, select: { id: true, name: true, code: true, color: true } }) : null,
+    ]));
     const tz = day.timezone;
     return {
       ...this.shape(day, shift?.name),
@@ -356,6 +357,7 @@ export class MobileController {
     private readonly live: LiveService,
     private readonly supabase: SupabaseService,
     private readonly prisma: PrismaService,
+    private readonly expenses: ExpensesService,
   ) {}
 
   // Session & profile
@@ -454,10 +456,10 @@ export class MobileController {
   @Get('leave/types')
   async leaveTypes(@CurrentUser() user: AuthUser) {
     if (!user.employeeId) return [];
-    const { balances } = await this.leave.balances(user, undefined);
+    const { sheet: { balances }, types: allTypes } = await this.leave.balanceSheet(user, undefined);
     // No balances = no active types, or an intern without leave: nothing to apply for either way.
     if (!balances.length) return [];
-    const types = await this.prisma.leaveType.findMany({ where: { tenantId: user.tenantId, active: true }, orderBy: { code: 'asc' } });
+    const types = allTypes.filter((t) => t.active);
     // Only types this person is eligible for appear in balances.
     return types
       .filter((t) => balances.some((b) => b.leaveType.id === t.id))
@@ -526,11 +528,8 @@ export class MobileController {
   /** Private bucket; type checked by magic bytes, 5 MB cap. Returns the key to attach. */
   @Post('uploads')
   async upload(@CurrentUser() user: AuthUser, @Body() dto: UploadDto) {
-    const body = Buffer.from(dto.dataBase64, 'base64');
-    if (body.byteLength > MAX_UPLOAD_BYTES) throw new AppError(413, 'FILE_TOO_LARGE', 'At most 5 MB');
-    if (!MAGIC[dto.contentType](body)) throw new AppError(400, 'FILE_TYPE_MISMATCH', `The file is not a valid ${dto.contentType}`);
-    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'application/pdf': 'pdf' }[dto.contentType];
-    const key = `${user.tenantId}/${user.sub}/${randomUUID()}.${ext}`;
+    const body = decodeUpload(dto.dataBase64, dto.contentType);
+    const key = `${user.tenantId}/${user.sub}/${randomUUID()}.${EXT[dto.contentType]}`;
     await this.supabase.upload(BUCKETS.uploads(), key, body, dto.contentType);
     return { key, size: body.byteLength, contentType: dto.contentType };
   }
@@ -574,7 +573,9 @@ export class MobileController {
         ? await this.leave.list(user, { ...base, awaitingMe: true } as LeaveListQuery)
         : q.type === 'correction'
           ? await this.corrections.list(user, base as RequestListQuery)
-          : await this.remote.list(user, { ...base, awaitingMe: true } as RequestListQuery);
+          : q.type === 'expense'
+            ? (await assertFeature(this.prisma, user.tenantId, 'hr'), await this.expenses.list(user, { cursor: q.cursor, limit: q.limit, awaitingMe: true }))
+            : await this.remote.list(user, { ...base, awaitingMe: true } as RequestListQuery);
     // Never show someone their own request to decide.
     return { ...page, data: (page.data as Array<{ employeeId: string }>).filter((r) => r.employeeId !== user.employeeId) };
   }
@@ -585,6 +586,7 @@ export class MobileController {
     if (type === 'leave') return this.leave.approve(user, id, dto.note);
     if (type === 'correction') return this.corrections.decide(user, id, true, dto.note);
     if (type === 'remote') return this.remote.decide(user, id, 'APPROVED', dto.note);
+    if (type === 'expense') return assertFeature(this.prisma, user.tenantId, 'hr').then(() => this.expenses.decide(user, id, 'APPROVED', dto.note));
     throw new AppError(404, 'NOT_FOUND', 'Unknown approval type');
   }
 
@@ -597,13 +599,14 @@ export class MobileController {
     if (type === 'leave') return this.leave.reject(user, id, note);
     if (type === 'correction') return this.corrections.decide(user, id, false, note);
     if (type === 'remote') return this.remote.decide(user, id, 'REJECTED', note);
+    if (type === 'expense') return assertFeature(this.prisma, user.tenantId, 'hr').then(() => this.expenses.decide(user, id, 'REJECTED', note));
     throw new AppError(404, 'NOT_FOUND', 'Unknown approval type');
   }
 }
 
 @Module({
-  imports: [UsersModule, LeaveModule, AttendanceModule, RemoteModule, ScheduleModule, FieldVisitsModule],
-  controllers: [MobileController],
+  imports: [UsersModule, LeaveModule, AttendanceModule, RemoteModule, ScheduleModule, FieldVisitsModule, EmployeesModule, HrModule, PayrollModule],
+  controllers: [MobileController, MobileHrController],
   providers: [MobileService, IdempotencyInterceptor],
 })
 export class MobileModule {}

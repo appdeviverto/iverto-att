@@ -199,7 +199,8 @@ export class ReportsService {
     return { userId: user.sub, role: user.role, employeeId: user.employeeId, siteIds: user.siteIds, displayName };
   }
 
-  async requestExport(user: AuthUser, dto: ExportDto, scheduleId?: string) {
+  /** `onCreated` runs before the job is queued (the public API links its job row there). */
+  async requestExport(user: AuthUser, dto: ExportDto, scheduleId?: string, onCreated?: (reportJobId: string) => Promise<unknown>) {
     const def = await this.definition(user.tenantId, dto.type);
     if (!this.allowed(user.role, dto.type)) throw new AppError(403, 'FORBIDDEN', 'Employees can export only their own timesheet');
     if (!def.formats.includes(dto.format)) throw new AppError(400, 'FORMAT_UNSUPPORTED', `${def.title} is not available as ${dto.format}`);
@@ -217,9 +218,10 @@ export class ReportsService {
         type: dto.type,
         format: dto.format,
         filters: dto.filters as unknown as Prisma.InputJsonValue,
-        scope: this.scopeOf(user, profile?.displayName ?? user.email) as unknown as Prisma.InputJsonValue,
+        scope: this.scopeOf(user, profile?.displayName ?? (user.apiKey ? `API key “${user.apiKey.name}”` : user.email)) as unknown as Prisma.InputJsonValue,
       },
     });
+    await onCreated?.(job.id);
     await this.queue.add('export', { jobId: job.id }, { jobId: `export-${job.id}`, removeOnComplete: 500, removeOnFail: 1000, attempts: 2 });
     return { jobId: job.id, status: job.status };
   }
@@ -264,8 +266,9 @@ export class ReportsService {
         body = Buffer.from(csv, 'utf8');
       } else {
         const meta = {
-          orgName: settings.branding?.displayName || tenant.name,
+          orgName: settings.branding?.legalName || settings.branding?.displayName || tenant.name,
           logoUrl: settings.branding?.logoUrl ?? null,
+          contact: [settings.branding?.address?.replace(/\s*\n\s*/g, ', '), settings.branding?.phone, settings.branding?.email, settings.branding?.website].filter(Boolean).join('  ·  ') || null,
           period: from === to ? from : `${from} – ${to}`,
           filterChips: await this.filterChips(job.tenantId, filters),
           generatedBy: scope.displayName,
@@ -283,7 +286,7 @@ export class ReportsService {
         action: 'REPORT_EXPORTED',
         targetType: 'ReportJob',
         targetId: jobId,
-        actor: { type: job.scheduleId ? 'system' : 'user', userId: job.requestedBy ?? undefined },
+        actor: { type: job.scheduleId ? 'system' : job.requestedBy?.startsWith('apikey:') ? 'api_key' : 'user', userId: job.requestedBy ?? undefined },
         tenantId: job.tenantId,
         payloadFrom: () => ({ type: job.type, format: job.format, filters, from, to, rowCount, sha256, dataSha256 }),
         run: (tx) =>
@@ -333,10 +336,10 @@ export class ReportsService {
       const schedules = await this.prisma.reportSchedule.findMany({ where: { tenantId: user.tenantId, recipientUserIds: { has: user.sub } }, select: { id: true } });
       where.OR = [{ requestedBy: user.sub }, { scheduleId: { in: schedules.map((s) => s.id) } }];
     }
-    const [items, total] = await Promise.all([
-      this.prisma.reportJob.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size, omit: { scope: true } }),
-      this.prisma.reportJob.count({ where }),
-    ]);
+    const [items, total] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.reportJob.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size, omit: { scope: true } }),
+      tx.reportJob.count({ where }),
+    ]));
     return { items, total, page, size };
   }
 

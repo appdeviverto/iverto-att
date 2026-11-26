@@ -193,7 +193,7 @@ export function Overview() {
   );
 }
 
-interface Correction { id: string; employee: { fullName: string; employeeCode: string }; employeeId: string; workDate: string; inAt: string | null; outAt: string | null; reason: string; status: string; decisionNote: string | null; createdAt: string; fieldVisit: Omit<FieldVisit, 'local'> | null }
+interface Correction { id: string; employee: { fullName: string; employeeCode: string }; employeeId: string; workDate: string; inAt: string | null; outAt: string | null; reason: string; status: string; decisionNote: string | null; createdAt: string; fieldVisits: Omit<FieldVisit, 'local'>[] }
 
 export function Corrections() {
   const me = useMe();
@@ -219,8 +219,12 @@ export function Corrections() {
             { key: 'd', header: 'Day', render: (r) => r.workDate },
             { key: 'io', header: 'In / out', render: (r) => `${t(r.inAt)} / ${t(r.outAt)}` },
             { key: 'reason', header: 'Reason', render: (r) => <span className="text-fg-muted">{r.reason}</span> },
-            { key: 'p', header: 'Proof', render: (r) => r.fieldVisit
-              ? <span className="flex items-center gap-2"><img src={r.fieldVisit.photoUrl} alt="Field visit selfie" className="size-10 rounded-full object-cover" loading="lazy" />{r.fieldVisit.isMockLocation && <Badge tone="danger">Mock location</Badge>}</span>
+            { key: 'p', header: 'Proof', render: (r) => r.fieldVisits.length
+              ? <span className="flex items-center gap-2">
+                  <img src={r.fieldVisits[0].photoUrl} alt="Field visit selfie" className="size-10 rounded-full object-cover" loading="lazy" />
+                  {r.fieldVisits.length > 1 && <span className="text-fg-muted">+{r.fieldVisits.length - 1}</span>}
+                  {r.fieldVisits.some((v) => v.isMockLocation) && <Badge tone="danger">Mock location</Badge>}
+                </span>
               : <span className="text-fg-subtle">—</span> },
             { key: 's', header: 'Status', render: (r) => <StatusBadge value={r.status} map={REQUEST_STATUS} /> },
             { key: 'a', header: '', render: (r) => canDecide(r) ? <Decide path="/attendance/corrections" id={r.id} noun="Correction" canDecide /> : null },
@@ -237,8 +241,13 @@ export function Corrections() {
               { term: 'Reason', value: open.reason },
               { term: 'Status', value: <span><StatusBadge value={open.status} map={REQUEST_STATUS} />{open.decisionNote ? ` ${open.decisionNote}` : ''}</span> },
             ]} />
-            {open.fieldVisit
-              ? <FieldVisitProof visit={open.fieldVisit} />
+            {open.fieldVisits.length
+              ? open.fieldVisits.map((v, i) => (
+                  <section key={v.id} className="space-y-2">
+                    {open.fieldVisits.length > 1 && <h3 className="text-sm font-semibold text-fg">Visit {i + 1} of {open.fieldVisits.length}</h3>}
+                    <FieldVisitProof visit={v} />
+                  </section>
+                ))
               : <Callout tone="neutral" title="No proof attached">The employee didn’t attach a field visit from the mobile app.</Callout>}
           </div>
         </Modal>

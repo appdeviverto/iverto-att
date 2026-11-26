@@ -2,10 +2,12 @@ import { Body, Controller, Get, Injectable, Logger, Module, Param, Patch, Post }
 import { ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
 import { AuditableActionService } from '../audit/audit.service';
 import { actorOf, AuditActor, AuthUser, CurrentUser, Roles } from '../auth/auth.types';
+import { forgetTenant } from '../auth/jwt-auth.guard';
 import { AppError } from '../common/errors';
+import { FEATURES, Features, featuresOf, mergeTenantSettings } from '../common/features';
 import { PrismaService } from '../common/prisma.service';
 import { IsTimeZone } from '../common/validators';
 import { UsersModule } from '../users/users.controller';
@@ -22,11 +24,18 @@ class NewAdminDto {
   @IsEmail() email: string;
 }
 
+/** Paid modules; omitted ones are left as they are (off for a new tenant). */
+export class FeaturesDto {
+  @IsOptional() @IsBoolean() hr?: boolean;
+  @IsOptional() @IsBoolean() payroll?: boolean;
+}
+
 export class CreateTenantDto {
   @IsString() @MinLength(2) @MaxLength(120) name: string;
   @Matches(/^[a-z0-9][a-z0-9-]{1,40}$/, { message: 'slug must be lowercase letters, digits and dashes' }) slug: string;
   @ValidateNested() @Type(() => NewSiteDto) site: NewSiteDto;
   @ValidateNested() @Type(() => NewAdminDto) admin: NewAdminDto;
+  @IsOptional() @ValidateNested() @Type(() => FeaturesDto) features?: FeaturesDto;
 }
 
 export class UpdateTenantDto {
@@ -42,6 +51,7 @@ type TenantSettings = typeof TENANT_DEFAULTS.settings & {
   timezone?: string;
   adminUserId?: string;
   pendingAdmin?: { fullName: string; email: string };
+  features?: Features;
 };
 
 @Injectable()
@@ -96,7 +106,7 @@ export class PlatformService {
   async create(dto: CreateTenantDto, actor: AuditActor) {
     const d = TENANT_DEFAULTS;
     const tenant = await this.prisma.$transaction(async (tx) => {
-      const settings: TenantSettings = { ...d.settings, timezone: dto.site.timezone, pendingAdmin: dto.admin };
+      const settings: TenantSettings = { ...d.settings, timezone: dto.site.timezone, pendingAdmin: dto.admin, features: featuresOf({ features: dto.features }) };
       const t = await tx.tenant.create({
         data: { name: dto.name, slug: dto.slug, status: 'PROVISIONING', createdBy: actor.userId, settings: settings as any },
       });
@@ -162,9 +172,31 @@ export class PlatformService {
     });
   }
 
+  /**
+   * Switch HR / payroll on or off. Off hides the module and its routes answer 403
+   * FEATURE_DISABLED; nothing is deleted, so switching it back on restores everything.
+   */
+  async setFeatures(id: string, dto: FeaturesDto, actor: AuditActor) {
+    const updated = await this.audit.run({
+      action: 'TENANT_MODULES_UPDATED',
+      targetType: 'Tenant',
+      targetId: id,
+      actor,
+      tenantId: id,
+      payloadFrom: () => Object.fromEntries(FEATURES.filter((k) => typeof dto[k] === 'boolean').map((k) => [k, dto[k]])),
+      run: async (tx) => {
+        if (!(await tx.tenant.findUnique({ where: { id }, select: { id: true } }))) throw new AppError(404, 'TENANT_NOT_FOUND', 'Tenant not found');
+        // Only the keys sent change (unset DTO keys are undefined and skipped), merged in one UPDATE.
+        return mergeTenantSettings(tx, id, Object.fromEntries(FEATURES.map((k) => [k, dto[k]])), 'features');
+      },
+    });
+    forgetTenant(id);
+    return updated;
+  }
+
   /** Users are locked out within 60 s; terminals are refused Login and keep buffering (§13.1). */
-  setSuspended(id: string, suspended: boolean, reason: string | null, actor: AuditActor) {
-    return this.audit.run({
+  async setSuspended(id: string, suspended: boolean, reason: string | null, actor: AuditActor) {
+    const updated = await this.audit.run({
       action: suspended ? 'TENANT_SUSPENDED' : 'TENANT_REACTIVATED',
       targetType: 'Tenant',
       targetId: id,
@@ -183,6 +215,8 @@ export class PlatformService {
         });
       },
     });
+    forgetTenant(id); // after the commit, so no request re-caches the old status
+    return updated;
   }
 
   async resetAdminPassword(id: string, actor: AuditActor) {
@@ -222,6 +256,11 @@ export class PlatformController {
   @Patch(':id')
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateTenantDto) {
     return this.platform.update(id, dto, actorOf(user));
+  }
+
+  @Patch(':id/features')
+  setFeatures(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: FeaturesDto) {
+    return this.platform.setFeatures(id, dto, actorOf(user));
   }
 
   @Post(':id/suspend')

@@ -127,6 +127,13 @@ export class TerminalsController {
     return this.terminals.update(user.tenantId, deviceId, body, actorOf(user));
   }
 
+  @Post(':deviceId/rearm')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Allow the terminal to Register again (factory reset / lost token); the old token stops working' })
+  rearm(@CurrentUser() user: AuthUser, @Param('deviceId') deviceId: string) {
+    return this.terminals.rearm(user.tenantId, deviceId, actorOf(user));
+  }
+
   @Delete(':deviceId')
   @Roles('ADMIN')
   remove(@CurrentUser() user: AuthUser, @Param('deviceId') deviceId: string) {

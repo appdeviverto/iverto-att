@@ -24,7 +24,7 @@ import { AuditableActionService } from '../audit/audit.service';
 import { actorOf, AuthUser, CurrentUser, isHrOrAdmin, Roles } from '../auth/auth.types';
 import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
-import { PrismaService } from '../common/prisma.service';
+import { BATCH_TIMEOUT_MS, PrismaService } from '../common/prisma.service';
 import { addDays, dbDate, diffDays, eachDay, localYmd, Ymd, ymdOf } from '../common/time';
 import { IsHm, IsYmd } from '../common/validators';
 
@@ -212,6 +212,7 @@ export class ScheduleService {
     if (dto.effectiveTo && dto.effectiveTo < dto.effectiveFrom) throw new AppError(400, 'BAD_RANGE', 'effectiveTo is before effectiveFrom');
     if (dto.shiftId) await this.prisma.shift.findFirstOrThrow({ where: { id: dto.shiftId, tenantId: user.tenantId } });
     if (dto.patternId) await this.prisma.shiftPattern.findFirstOrThrow({ where: { id: dto.patternId, tenantId: user.tenantId } });
+    this.scope.assertNotSelf(user, dto.employeeIds);
     const employees = await this.prisma.employee.findMany({
       where: { AND: [await this.scope.employeeWhere(user), { id: { in: dto.employeeIds } }] },
     });
@@ -271,6 +272,7 @@ export class ScheduleService {
 
   private async assertOverrideScope(user: AuthUser, employeeIds: string[]) {
     const unique = [...new Set(employeeIds)];
+    this.scope.assertNotSelf(user, unique);
     const inScope = await this.prisma.employee.count({ where: { AND: [await this.scope.employeeWhere(user), { id: { in: unique } }] } });
     if (inScope !== unique.length) throw new AppError(404, 'EMPLOYEE_NOT_FOUND', 'Unknown employee id(s)');
   }
@@ -349,13 +351,15 @@ export class ScheduleService {
       take: 500,
     });
     const ids = employees.map((e) => e.id);
-    const [days, overrides, leave, tr] = await Promise.all([
-      this.prisma.attendanceDay.findMany({ where: { employeeId: { in: ids }, workDate: { gte: dbDate(q.from), lte: dbDate(q.to) } } }),
-      this.prisma.rosterOverride.findMany({ where: { employeeId: { in: ids }, date: { gte: dbDate(q.from), lte: dbDate(q.to) } } }),
-      this.prisma.leaveRequest.findMany({
-        where: { employeeId: { in: ids }, status: { in: ['PENDING', 'APPROVED'] }, startDate: { lte: dbDate(q.to) }, endDate: { gte: dbDate(q.from) } },
-        select: { employeeId: true, startDate: true, endDate: true, status: true },
-      }),
+    const [[days, overrides, leave], tr] = await Promise.all([
+      this.prisma.$transaction((tx) => Promise.all([
+        tx.attendanceDay.findMany({ where: { employeeId: { in: ids }, workDate: { gte: dbDate(q.from), lte: dbDate(q.to) } } }),
+        tx.rosterOverride.findMany({ where: { employeeId: { in: ids }, date: { gte: dbDate(q.from), lte: dbDate(q.to) } } }),
+        tx.leaveRequest.findMany({
+          where: { employeeId: { in: ids }, status: { in: ['PENDING', 'APPROVED'] }, startDate: { lte: dbDate(q.to) }, endDate: { gte: dbDate(q.from) } },
+          select: { employeeId: true, startDate: true, endDate: true, status: true },
+        }),
+      ]), { timeout: BATCH_TIMEOUT_MS }),
       this.roster.tenantRoster(user.tenantId, q.from, q.to),
     ]);
     const rosters = await this.roster.employeeRosters(tr, employees, q.from, q.to);

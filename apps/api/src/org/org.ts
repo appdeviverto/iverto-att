@@ -1,12 +1,14 @@
 import { Body, Controller, Delete, Get, Module, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
+import { mergeTenantSettings } from '../common/features';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsHexColor,
   IsIn,
   IsInt,
@@ -37,6 +39,15 @@ class BrandingDto {
   @IsOptional() @IsUrl({ protocols: ['https'], require_protocol: true }) logoUrl?: string;
   @IsOptional() @IsHexColor() primaryColor?: string;
   @IsOptional() @IsString() @MaxLength(120) displayName?: string;
+  // Company letterhead: printed on payslips, letters and report PDFs.
+  /** Registered / legal name when it differs from the display name ("Acme Industries Pvt. Ltd."). */
+  @IsOptional() @IsString() @MaxLength(160) legalName?: string;
+  @IsOptional() @IsString() @MaxLength(400) address?: string;
+  @IsOptional() @IsString() @MaxLength(40) phone?: string;
+  @IsOptional() @IsEmail() email?: string;
+  @IsOptional() @IsUrl({ require_protocol: false }) website?: string;
+  /** e.g. "CIN U12345KA2020PTC000000 · GSTIN 29ABCDE1234F1Z5". */
+  @IsOptional() @IsString() @MaxLength(200) registration?: string;
 }
 
 /** Categories every organisation starts with; settings.employmentTypes replaces them. */
@@ -181,7 +192,7 @@ export class OrgController {
   @Patch()
   @Roles('ADMIN')
   async update(@CurrentUser() user: AuthUser, @Body() dto: OrgSettingsDto) {
-    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
+    // DTO instances carry every declared field (unset ones as undefined); mergeTenantSettings skips those.
     const { name, ...patch } = dto;
     if (dto.employmentTypes) {
       const codes = new Set(dto.employmentTypes.map((t) => t.code));
@@ -189,11 +200,10 @@ export class OrgController {
       const inUse = await this.prisma.employee.findFirst({ where: { tenantId: user.tenantId, employmentType: { notIn: [...codes] } }, select: { employmentType: true } });
       if (inUse) throw new AppError(409, 'EMPLOYMENT_TYPE_IN_USE', `Employees are still ${inUse.employmentType}; move them to another type first`);
     }
-    const settings = { ...(tenant.settings as object), ...patch };
-    const updated = await audited(this.audit, user, 'ORG_SETTINGS_UPDATED', 'Tenant', (tx) =>
-      tx.tenant.update({ where: { id: user.tenantId }, data: { name, settings: settings as Prisma.InputJsonValue } }),
-      user.tenantId, dto,
-    );
+    const updated = await audited(this.audit, user, 'ORG_SETTINGS_UPDATED', 'Tenant', async (tx) => {
+      if (name !== undefined) await tx.tenant.update({ where: { id: user.tenantId }, data: { name } });
+      return mergeTenantSettings(tx, user.tenantId, patch);
+    }, user.tenantId, dto);
     if (dto.dayBoundary) {
       const today = localYmd(new Date(), 'UTC');
       await this.queue.bulk({ tenantId: user.tenantId, from: addDays(today, -1), to: addDays(today, 14), rematerialise: true });
@@ -270,6 +280,16 @@ export class SitesController {
 export class DepartmentsController {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditableActionService) {}
 
+  /** Foreign keys ignore RLS, so ids from the body are checked against the tenant here. */
+  private async assertRefs(user: AuthUser, dto: DepartmentDto) {
+    if (dto.headEmployeeId && !(await this.prisma.employee.count({ where: { id: dto.headEmployeeId, tenantId: user.tenantId } }))) {
+      throw new AppError(400, 'EMPLOYEE_NOT_FOUND', 'Unknown head of department');
+    }
+    if (dto.policyId && !(await this.prisma.attendancePolicy.count({ where: { id: dto.policyId, tenantId: user.tenantId } }))) {
+      throw new AppError(400, 'POLICY_NOT_FOUND', 'Unknown attendance policy');
+    }
+  }
+
   @Get()
   @SkipMfa() // mobile leaderboard (docs/mobile_api.md §10.6)
   list(@CurrentUser() user: AuthUser) {
@@ -287,7 +307,8 @@ export class DepartmentsController {
 
   @Post()
   @Roles('ADMIN', 'HR')
-  create(@CurrentUser() user: AuthUser, @Body() dto: DepartmentDto) {
+  async create(@CurrentUser() user: AuthUser, @Body() dto: DepartmentDto) {
+    await this.assertRefs(user, dto);
     return audited(this.audit, user, 'DEPARTMENT_CREATED', 'Department', (tx) => tx.department.create({ data: { ...dto, tenantId: user.tenantId } }), undefined, dto);
   }
 
@@ -295,6 +316,7 @@ export class DepartmentsController {
   @Roles('ADMIN', 'HR')
   async update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DepartmentDto) {
     await this.prisma.department.findFirstOrThrow({ where: { id, tenantId: user.tenantId } });
+    await this.assertRefs(user, dto);
     return audited(this.audit, user, 'DEPARTMENT_UPDATED', 'Department', (tx) => tx.department.update({ where: { id }, data: dto }), id, dto);
   }
 

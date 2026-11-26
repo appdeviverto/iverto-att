@@ -1,24 +1,37 @@
 import './index.css';
-import { CenteredSpinner, ConfirmHost, ReasonDialogHost, ThemeProvider, Toaster } from '@iverto-org/core-ui';
+import { CenteredSpinner, ConfirmHost, EmptyState, ReasonDialogHost, ThemeProvider, Toaster } from '@iverto-org/core-ui';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation } from 'react-router';
 import { Layout, PlatformLayout } from './components/Layout';
-import { CACHE_MAX_AGE, clearCache, persister, queryClient } from './lib/api';
+import { CACHE_MAX_AGE, clearCache, persistable, persister, queryClient, useFeatures } from './lib/api';
 import { AuthProvider, isManager, useAuth, useMe } from './lib/auth';
 import { ForgotPassword, Login, MfaChallenge, MfaSetup, ResetPassword, SetPassword, Suspended } from './pages/Auth';
 import { Corrections, Daily, Logs, Overview } from './pages/Attendance';
 import { EmployeeDetail, Employees } from './pages/Employees';
+import { Assets, Announcements, Expenses, MyTasks, OrgChart, ProfileChanges } from './pages/Hr';
 import { Leaderboard } from './pages/Leaderboard';
+import { MyPayslips, Payroll, PayrollRun } from './pages/Payroll';
 import { Leave, RemoteCheckIns, RemoteWork } from './pages/Leave';
 import { Live } from './pages/Live';
-import { TenantDetail, Tenants } from './pages/Platform';
+import { PlatformAnnouncements, TenantDetail, Tenants } from './pages/Platform';
+import { PlatformApi } from './components/ApiAccess';
 import { Reports } from './pages/Reports';
 import { Holidays } from './pages/Holidays';
 import { Patterns, Roster, Shifts } from './pages/Schedule';
 import { Settings } from './pages/Settings';
 import { Enrollment, Terminals } from './pages/Terminals';
+
+/** HR and payroll pages only for tenants the platform switched the module on for. */
+function RequireFeature({ feature }: { feature: 'hr' | 'payroll' }) {
+  const features = useFeatures();
+  if (!features.loaded) return <CenteredSpinner />;
+  if (!features[feature]) {
+    return <EmptyState title={`${feature === 'hr' ? 'HR' : 'Payroll'} isn’t enabled for your organisation`} description="Contact Iverto to switch it on. Everything else keeps working as before." />;
+  }
+  return <Outlet />;
+}
 
 /** Signed in → the persisted cache for *this* user (and tenant, for platform admins) is restored. */
 function RequireAuth() {
@@ -35,11 +48,15 @@ function RequireAuth() {
   if (me.isSuperAdmin && !override && !pathname.startsWith('/platform')) return <Navigate to="/platform" replace />;
   return (
     <PersistQueryClientProvider key={`${me.id}:${override ?? ''}`} client={queryClient}
-      persistOptions={{ persister, maxAge: CACHE_MAX_AGE, buster: `${me.id}:${override ?? ''}` }}>
+      persistOptions={{ persister, maxAge: CACHE_MAX_AGE, buster: `${me.id}:${override ?? ''}`, dehydrateOptions: { shouldDehydrateQuery: persistable } }}>
       <Outlet />
     </PersistQueryClientProvider>
   );
 }
+
+/** Redoc is big: its own chunk, loaded only when someone opens the API reference. */
+const Developers = lazy(() => import('./pages/Developers'));
+const developers = <Suspense fallback={<CenteredSpinner />}><Developers /></Suspense>;
 
 function Home() {
   return <Navigate to={isManager(useMe()) ? '/live' : '/attendance/daily'} replace />;
@@ -53,7 +70,10 @@ const router = createBrowserRouter([
     element: <RequireAuth />,
     children: [
       { path: '/set-password', element: <SetPassword /> },
-      { path: '/platform', element: <PlatformLayout />, children: [{ index: true, element: <Tenants /> }, { path: ':id', element: <TenantDetail /> }] },
+      // Full-screen API reference: org admins (developers) and superadmins (platform/developers).
+      { path: '/developers', element: developers },
+      { path: '/platform/developers', element: developers },
+      { path: '/platform', element: <PlatformLayout />, children: [{ index: true, element: <Tenants /> }, { path: 'announcements', element: <PlatformAnnouncements /> }, { path: 'api', element: <PlatformApi /> }, { path: ':id', element: <TenantDetail /> }] },
       {
         element: <Layout />,
         children: [
@@ -77,6 +97,26 @@ const router = createBrowserRouter([
           { path: 'reports', element: <Reports /> },
           { path: 'terminals', element: <Terminals /> },
           { path: 'enrollment', element: <Enrollment /> },
+          {
+            element: <RequireFeature feature="payroll" />,
+            children: [
+              { path: 'payroll/runs/:id', element: <PayrollRun /> },
+              { path: 'payroll/mine', element: <MyPayslips /> },
+              { path: 'payroll/:tab', element: <Payroll /> },
+              { path: 'payroll', element: <Navigate to="/payroll/runs" replace /> },
+            ],
+          },
+          {
+            element: <RequireFeature feature="hr" />,
+            children: [
+              { path: 'hr/expenses', element: <Expenses /> },
+              { path: 'hr/assets', element: <Assets /> },
+              { path: 'hr/announcements', element: <Announcements /> },
+              { path: 'hr/org-chart', element: <OrgChart /> },
+              { path: 'hr/tasks', element: <MyTasks /> },
+            ],
+          },
+          { path: 'hr/profile-changes', element: <ProfileChanges /> },
           { path: 'settings/:section?', element: <Settings /> },
         ],
       },

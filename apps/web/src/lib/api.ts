@@ -14,8 +14,8 @@ export class ApiError extends Error {
 
 type Params = Record<string, string | number | boolean | string[] | null | undefined>;
 
-/** Every error leaves the API as { statusCode, code, message, details? } (§14). */
-export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; query?: Params } = {}): Promise<T> {
+
+async function request(path: string, init: { method?: string; body?: unknown; query?: Params }) {
   const { data } = await supabase.auth.getSession();
   const url = new URL(BASE + path, window.location.origin);
   for (const [k, v] of Object.entries(init.query ?? {})) {
@@ -27,18 +27,43 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   if (init.body !== undefined) headers['Content-Type'] = 'application/json';
   const override = tenantOverride();
   if (override) headers['X-Tenant-Id'] = override;
-
   const res = await fetch(url, { method: init.method ?? 'GET', headers, body: init.body === undefined ? undefined : JSON.stringify(init.body) });
-  const json = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
+    const json = await res.json().catch(() => null);
     const err = new ApiError(res.status, json?.code ?? 'ERROR', json?.message ?? res.statusText, json?.details);
     if (['UNAUTHORIZED', 'TENANT_SUSPENDED', 'PASSWORD_CHANGE_REQUIRED', 'MFA_REQUIRED'].includes(err.code)) {
       window.dispatchEvent(new CustomEvent('iverto:auth', { detail: err.code }));
     }
+    // The platform switched a module off since /org was cached: refetch it so the nav and pages catch up.
+    if (err.code === 'FEATURE_DISABLED') void queryClient.invalidateQueries({ queryKey: keyOf('/org') });
     throw err;
   }
-  return json as T;
+  return res;
 }
+
+/** Every error leaves the API as { statusCode, code, message, details? } (§14). */
+export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; query?: Params } = {}): Promise<T> {
+  const res = await request(path, init);
+  return (res.status === 204 ? null : await res.json().catch(() => null)) as T;
+}
+
+/** A file the API streams (xlsx, csv, pdf) → saved under the name it sends. Confidential files never touch the cache. */
+export async function downloadFile(path: string, query?: Params, fallbackName = 'download') {
+  const res = await request(path, { query });
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  Object.assign(document.createElement('a'), { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** A picked file as base64 (no data: prefix), for the JSON upload endpoints. */
+export const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
 
 export const post = <T = unknown>(path: string, body: unknown = {}) => api<T>(path, { method: 'POST', body });
 export const patch = <T = unknown>(path: string, body: unknown) => api<T>(path, { method: 'PATCH', body });
@@ -86,6 +111,14 @@ export const persister = createSyncStoragePersister({
   retry: removeOldestQuery, // localStorage full → drop the oldest queries rather than fail
 });
 
+/**
+ * Kept in memory only, never written to localStorage: pay and bank details, PAN, documents, the people
+ * directory and logins. A persisted copy would outlive the tab (24 h) and sit within reach of any XSS.
+ */
+const NOT_PERSISTED = new Set(['payroll', 'employees', 'documents', 'users', 'expenses', 'profile-requests', 'letter-templates', 'audit-logs']);
+export const persistable = (q: { queryKey: readonly unknown[]; state: { status: string } }) =>
+  q.state.status === 'success' && !NOT_PERSISTED.has(String(q.queryKey[0]));
+
 export function clearCache() {
   queryClient.clear();
   window.localStorage.removeItem('iverto-att-cache');
@@ -104,6 +137,12 @@ export function useApi<T>(path: string | null, params?: Params, options: Partial
     enabled: path !== null && options.enabled !== false,
     ...options,
   } as UseQueryOptions<T>);
+}
+
+/** The paid modules the platform switched on for this tenant (tenant.settings.features); off until `loaded`. */
+export function useFeatures() {
+  const org = useApi<{ settings?: { features?: { hr?: boolean; payroll?: boolean } } }>('/org').data;
+  return { loaded: Boolean(org), hr: org?.settings?.features?.hr === true, payroll: org?.settings?.features?.payroll === true };
 }
 
 /** Cursor-paginated lists ({ data, nextCursor }) behind a "Load more" ListFooter. */
@@ -173,3 +212,18 @@ export async function downloadExport(jobId: string) {
   const { url } = await api<{ url: string }>(`/reports/exports/${jobId}/download`, { query: { redirect: false } });
   window.location.assign(url);
 }
+
+/** The employee directory's field registry (API employees/fields.ts): labels, rules, sections, accepted header spellings. */
+export interface ImportColumn {
+  key: string; label: string; section: string; required: boolean; rule: string; example: string; aka: string[];
+  type: 'text' | 'date' | 'int' | 'money' | 'email' | 'enum' | 'ref'; values: string[] | null;
+  /** Import-only (site/department by name, manager code, salary), not an employee field. */
+  virtual: boolean; sensitive: boolean; selfEditable: boolean;
+}
+export const useImportColumns = () => useApi<ImportColumn[]>('/employees/import/columns', undefined, REFERENCE);
+
+/** ₹ with Indian grouping: 3512345.5 → "₹35,12,345.50". */
+export const inr = (rupees: number | null | undefined, decimals = 2) =>
+  rupees === null || rupees === undefined ? '—' : `₹${rupees.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+/** Paise (payroll run detail) → "₹35,123.45". */
+export const inrPaise = (paise: number) => inr(paise / 100);

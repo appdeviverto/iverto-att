@@ -99,17 +99,18 @@ export class RosterService {
   constructor(private readonly prisma: PrismaService) {}
 
   async tenantRoster(tenantId: string, from: Ymd, to: Ymd): Promise<TenantRoster> {
-    const [tenant, shifts, patterns, policies, departments, sites, holidays] = await Promise.all([
-      this.prisma.tenant.findUnique({ where: { id: tenantId } }),
-      this.prisma.shift.findMany({ where: { tenantId } }),
-      this.prisma.shiftPattern.findMany({ where: { tenantId } }),
-      this.prisma.attendancePolicy.findMany({ where: { tenantId } }),
-      this.prisma.department.findMany({ where: { tenantId }, select: { id: true, policyId: true } }),
-      this.prisma.site.findMany({ where: { tenantId } }),
-      this.prisma.holiday.findMany({
+    // One transaction: one connection and one set_config instead of seven (BEGIN/set_config/COMMIT each).
+    const [tenant, shifts, patterns, policies, departments, sites, holidays] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.tenant.findUnique({ where: { id: tenantId } }),
+      tx.shift.findMany({ where: { tenantId } }),
+      tx.shiftPattern.findMany({ where: { tenantId } }),
+      tx.attendancePolicy.findMany({ where: { tenantId } }),
+      tx.department.findMany({ where: { tenantId }, select: { id: true, policyId: true } }),
+      tx.site.findMany({ where: { tenantId } }),
+      tx.holiday.findMany({
         where: { tenantId, date: { gte: dbDate(addDays(from, -2)), lte: dbDate(addDays(to, 2)) } },
       }),
-    ]);
+    ]));
     const byCalendar = new Map<string, Map<Ymd, string>>();
     for (const h of holidays) {
       if (!byCalendar.has(h.calendarId)) byCalendar.set(h.calendarId, new Map());
@@ -132,18 +133,18 @@ export class RosterService {
   /** Per-employee roster inputs for [from−2, to+2]. */
   async employeeRosters(tr: TenantRoster, employees: Employee[], from: Ymd, to: Ymd): Promise<Map<string, RosterData>> {
     const ids = employees.map((e) => e.id);
-    const [schedules, overrides] = await Promise.all([
-      this.prisma.employeeSchedule.findMany({
+    const [schedules, overrides] = await this.prisma.$transaction((tx) => Promise.all([
+      tx.employeeSchedule.findMany({
         where: {
           employeeId: { in: ids },
           effectiveFrom: { lte: dbDate(addDays(to, 2)) },
           OR: [{ effectiveTo: null }, { effectiveTo: { gte: dbDate(addDays(from, -2)) } }],
         },
       }),
-      this.prisma.rosterOverride.findMany({
+      tx.rosterOverride.findMany({
         where: { employeeId: { in: ids }, date: { gte: dbDate(addDays(from, -2)), lte: dbDate(addDays(to, 2)) } },
       }),
-    ]);
+    ]));
     const out = new Map<string, RosterData>();
     for (const e of employees) {
       const calendar = tr.siteCalendar.get(e.siteId);

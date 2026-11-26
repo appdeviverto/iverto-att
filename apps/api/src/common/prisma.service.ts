@@ -9,6 +9,12 @@ import { RlsContext, rlsContext } from './rls';
 // Supabase's pooler resolves AAAA too; hosts without IPv6 egress need IPv4 first.
 setDefaultResultOrder('ipv4first');
 
+/**
+ * For read batches over a month or a payroll period: they now share one transaction, so the
+ * default 5 s budget (formerly per query) would cover all of them.
+ */
+export const BATCH_TIMEOUT_MS = 20_000;
+
 /** Set while inside an interactive transaction whose GUCs are already set. */
 const inTx = new AsyncLocalStorage<true>();
 

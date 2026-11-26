@@ -35,9 +35,12 @@ export function parseCsv(text: string): string[][] {
 const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 export const toCsv = (rows: string[][]) => rows.map((r) => r.map(cell).join(',')).join('\r\n');
 
+/** For files a person opens in Excel (not the import payload, where +91… phones must survive): a leading =,+,-,@ would run as a formula. */
+export const excelCsv = (rows: string[][]) => toCsv(rows.map((r) => r.map((v) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v))));
+
 /** BOM so Excel opens it as UTF-8. */
 export function downloadCsv(filename: string, rows: string[][]) {
-  const url = URL.createObjectURL(new Blob([`﻿${toCsv(rows)}\r\n`], { type: 'text/csv;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob([`﻿${excelCsv(rows)}\r\n`], { type: 'text/csv;charset=utf-8' }));
   const a = Object.assign(document.createElement('a'), { href: url, download: filename });
   a.click();
   URL.revokeObjectURL(url);

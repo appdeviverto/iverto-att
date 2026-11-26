@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Injectable, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { AuditableActionService } from '../audit/audit.service';
 import { AzureBlobService } from '../common/azure-blob.service';
 import { actorOf, AuthUser, CurrentUser, isHrOrAdmin } from '../auth/auth.types';
@@ -10,12 +10,14 @@ import { AppError } from '../common/errors';
 import { PrismaService } from '../common/prisma.service';
 import { addDays, dbDate, localYmd, ymdOf, zonedInstant } from '../common/time';
 import { IsYmd } from '../common/validators';
+import { assertPayrollOpen } from '../payroll/lock';
 import { NotificationsService } from '../notifications/notifications';
 import { PunchesService } from '../punches/punches';
 import { scopedEmployees } from './attendance.controller';
 
 /** 'HH:mm' (site-local on the date) or a full ISO instant. */
 const TIME_OR_INSTANT = /^(([01]\d|2[0-3]):[0-5]\d|\d{4}-\d{2}-\d{2}T.+)$/;
+const MAX_PROOF = 10;
 
 export class CreateCorrectionDto {
   /** Omit for yourself. */
@@ -24,7 +26,9 @@ export class CreateCorrectionDto {
   @IsOptional() @Matches(TIME_OR_INSTANT, { message: 'in must be HH:mm or an ISO datetime' }) in?: string;
   @IsOptional() @Matches(TIME_OR_INSTANT, { message: 'out must be HH:mm or an ISO datetime' }) out?: string;
   @IsString() @MinLength(3) @MaxLength(500) reason: string;
-  /** Proof: one of the employee's own field visits (geotagged selfie from the app). */
+  /** Proof: the employee's own field visits (geotagged selfies from the app), e.g. one per client visited. */
+  @IsOptional() @IsArray() @ArrayMaxSize(MAX_PROOF) @IsString({ each: true }) fieldVisitIds?: string[];
+  /** Older app builds send a single visit. */
   @IsOptional() @IsString() fieldVisitId?: string;
 }
 
@@ -70,37 +74,53 @@ export class CorrectionsService {
         employee,
         workDate: q.from || q.to ? { gte: q.from ? dbDate(q.from) : undefined, lte: q.to ? dbDate(q.to) : undefined } : undefined,
       },
-      include: { employee: { select: { id: true, fullName: true, employeeCode: true } }, fieldVisit: true },
+      include: { employee: { select: { id: true, fullName: true, employeeCode: true } } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
     });
-    const data = await Promise.all(
-      rows.slice(0, limit).map(async ({ fieldVisit: v, ...r }) => ({
-        ...r,
-        workDate: ymdOf(r.workDate),
-        // Proof photo with a 1-hour link; the key itself never leaves the API.
-        fieldVisit: v ? { id: v.id, takenAt: v.takenAt, lat: v.lat, lng: v.lng, accuracy: v.accuracy, isMockLocation: v.isMockLocation, note: v.note, photoUrl: await this.blobs.readUrl(v.photoKey) } : null,
-      })),
+    const page = rows.slice(0, limit);
+    const visitIds = page.flatMap((r) => r.fieldVisitIds);
+    const visits = visitIds.length ? await this.prisma.fieldVisit.findMany({ where: { tenantId: user.tenantId, id: { in: visitIds } }, orderBy: { takenAt: 'asc' } }) : [];
+    // Proof photos with 1-hour links; the key itself never leaves the API.
+    const shown = await Promise.all(
+      visits.map(async (v) => ({ id: v.id, takenAt: v.takenAt, lat: v.lat, lng: v.lng, accuracy: v.accuracy, isMockLocation: v.isMockLocation, note: v.note, photoUrl: await this.blobs.readUrl(v.photoKey) })),
     );
+    const data = page.map((r) => {
+      const fieldVisits = shown.filter((v) => r.fieldVisitIds.includes(v.id));
+      // `fieldVisit` (the first) is kept for older app builds.
+      return { ...r, workDate: ymdOf(r.workDate), fieldVisits, fieldVisit: fieldVisits[0] ?? null };
+    });
     return { data, nextCursor: rows.length > limit ? data[data.length - 1].id : null };
   }
 
   async create(user: AuthUser, dto: CreateCorrectionDto) {
     const self = !dto.employeeId || dto.employeeId === user.employeeId;
-    const employee = self ? await this.scope.self(user) : await this.scope.assertEmployee(user, dto.employeeId!);
+    const own = self ? await this.scope.self(user) : null;
+    const employee = own ?? (await this.scope.assertEmployee(user, dto.employeeId!));
     if (!self && user.role === 'EMPLOYEE') throw new AppError(403, 'FORBIDDEN', 'You can only correct your own attendance');
     if (!dto.in && !dto.out) throw new AppError(400, 'NOTHING_TO_CORRECT', 'Give an in time, an out time or both');
-    const site = await this.prisma.site.findUniqueOrThrow({ where: { id: employee.siteId } });
+    const site = own?.site ?? (await this.prisma.site.findUniqueOrThrow({ where: { id: employee.siteId } }));
     if (dto.date > localYmd(new Date(), site.timezone)) throw new AppError(400, 'FUTURE_DATE', 'Cannot correct a future day');
+    await assertPayrollOpen(this.prisma, employee.tenantId, dto.date);
 
     const inAt = dto.in ? this.instant(dto.date, dto.in, site.timezone) : null;
     let outAt = dto.out ? this.instant(dto.date, dto.out, site.timezone) : null;
     // "out" earlier than "in" on the form means the next morning (night shift).
     if (inAt && outAt && outAt <= inAt && dto.out!.length === 5) outAt = this.instant(addDays(dto.date, 1), dto.out!, site.timezone);
     if (inAt && outAt && outAt <= inAt) throw new AppError(400, 'OUT_BEFORE_IN', 'Out must be after in');
-    if (dto.fieldVisitId && !(await this.prisma.fieldVisit.findFirst({ where: { id: dto.fieldVisitId, tenantId: user.tenantId, employeeId: employee.id } }))) {
-      throw new AppError(400, 'BAD_PROOF', 'Attach one of this employee’s own field visits');
+    // An ISO instant must belong to this work day (±1 day for night shifts): otherwise an approved correction
+    // would plant a punch on another, possibly payroll-locked, date.
+    const window = [addDays(dto.date, -1), dto.date, addDays(dto.date, 1)];
+    for (const at of [inAt, outAt]) {
+      if (at && (Number.isNaN(at.getTime()) || !window.includes(localYmd(at, site.timezone)))) {
+        throw new AppError(400, 'TIME_OUTSIDE_DAY', 'In and out must fall on the corrected day');
+      }
+    }
+    const fieldVisitIds = [...new Set([...(dto.fieldVisitIds ?? []), ...(dto.fieldVisitId ? [dto.fieldVisitId] : [])])];
+    if (fieldVisitIds.length > MAX_PROOF) throw new AppError(400, 'BAD_PROOF', `Attach at most ${MAX_PROOF} field visits`);
+    if (fieldVisitIds.length && (await this.prisma.fieldVisit.count({ where: { id: { in: fieldVisitIds }, tenantId: user.tenantId, employeeId: employee.id } })) !== fieldVisitIds.length) {
+      throw new AppError(400, 'BAD_PROOF', 'Attach only this employee’s own field visits');
     }
 
     const correction = await this.audit.run({
@@ -108,7 +128,7 @@ export class CorrectionsService {
       targetType: 'AttendanceCorrection',
       actor: actorOf(user),
       tenantId: user.tenantId,
-      payloadFrom: () => ({ employeeId: employee.id, date: dto.date, inAt, outAt, reason: dto.reason, fieldVisitId: dto.fieldVisitId ?? null }),
+      payloadFrom: () => ({ employeeId: employee.id, date: dto.date, inAt, outAt, reason: dto.reason, fieldVisitIds }),
       run: (tx) =>
         tx.attendanceCorrection.create({
           data: {
@@ -118,7 +138,7 @@ export class CorrectionsService {
             inAt,
             outAt,
             reason: dto.reason,
-            fieldVisitId: dto.fieldVisitId,
+            fieldVisitIds,
             requestedBy: user.sub,
           },
         }),
@@ -139,6 +159,7 @@ export class CorrectionsService {
     if (!c) throw new AppError(404, 'NOT_FOUND', 'Correction not found');
     if (c.status !== 'PENDING') throw new AppError(409, 'ALREADY_DECIDED', `This correction is already ${c.status.toLowerCase()}`);
     const employee = await this.scope.assertApprover(user, c.employeeId);
+    if (approve) await assertPayrollOpen(this.prisma, c.tenantId, ymdOf(c.workDate));
 
     const updated = await this.audit.run({
       action: approve ? 'CORRECTION_APPROVED' : 'CORRECTION_REJECTED',
@@ -176,7 +197,7 @@ export class CorrectionsService {
         );
       }
     }
-    const requester = await this.notifications.userIdOfEmployee(c.employeeId);
+    const requester = employee.userId;
     await this.notifications.notify(c.tenantId, [requester], {
       type: approve ? 'CORRECTION_APPROVED' : 'CORRECTION_REJECTED',
       title: `Correction ${approve ? 'approved' : 'rejected'}`,

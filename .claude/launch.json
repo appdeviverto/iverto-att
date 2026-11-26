@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-local-e2e",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--prefix", "apps/web", "vite", "apps/web", "--port", "5173", "--strictPort"],
+      "port": 5173,
+      "env": {
+        "VITE_SUPABASE_URL": "http://localhost:54321",
+        "VITE_SUPABASE_ANON_KEY": "local-mock",
+        "VITE_API_URL": "/v1",
+        "VITE_WS_PATH": "/socket.io",
+        "VITE_WS_URL": ""
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Module, Param, Patch, Post } from '@nest
 import { ApiTags } from '@nestjs/swagger';
 import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { actorOf, AllowPendingPassword, AuthUser, CurrentUser, Public, ROLES, Role, Roles, SkipMfa } from '../auth/auth.types';
+import { ScopeService } from '../auth/scope.service';
 import { AppError } from '../common/errors';
 import { UsersService } from './users.service';
 
@@ -36,7 +37,19 @@ export class ResetPasswordDto {
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly scope: ScopeService,
+  ) {}
+
+  /** HR manages staff logins only: resetting an ADMIN/HR login would hand HR that account. */
+  private async assertManageable(user: AuthUser, id: string) {
+    if (user.role !== 'HR') return;
+    const target = await this.users.get(user.tenantId, id);
+    if (target.userId !== user.sub && !['EMPLOYEE', 'MANAGER'].includes(target.role)) {
+      throw new AppError(403, 'FORBIDDEN', 'HR can only reset EMPLOYEE and MANAGER logins');
+    }
+  }
 
   @Get()
   @Roles('ADMIN', 'HR')
@@ -46,11 +59,12 @@ export class UsersController {
 
   @Post()
   @Roles('ADMIN', 'HR')
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateUserDto) {
+  async create(@CurrentUser() user: AuthUser, @Body() dto: CreateUserDto) {
     // Roles and access are an admin capability; HR only grants app access to staff.
     if (user.role === 'HR' && !['EMPLOYEE', 'MANAGER'].includes(dto.role)) {
       throw new AppError(403, 'FORBIDDEN', 'HR can only create EMPLOYEE and MANAGER logins');
     }
+    if (dto.employeeId) await this.scope.assertEmployee(user, dto.employeeId);
     return this.users.createLogin({ ...dto, tenantId: user.tenantId }, actorOf(user));
   }
 
@@ -80,13 +94,15 @@ export class UsersController {
 
   @Post(':id/reset-password')
   @Roles('ADMIN', 'HR')
-  resetPassword(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+  async resetPassword(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.assertManageable(user, id);
     return this.users.resetPassword(user.tenantId, id, actorOf(user));
   }
 
   @Post(':id/reset-mfa')
   @Roles('ADMIN', 'HR')
-  resetMfa(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+  async resetMfa(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.assertManageable(user, id);
     return this.users.resetMfa(user.tenantId, id, actorOf(user));
   }
 }

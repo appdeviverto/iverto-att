@@ -41,11 +41,13 @@ model Site {
   geofenceRadiusM   Int?     @map("geofence_radius_m")
   geofenceStrict    Boolean  @default(false) @map("geofence_strict")
   createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @map("updated_at") // set by the api_set_updated_at trigger (post-init/007)
 
   employees Employee[]
   devices   Device[]
 
   @@index([tenantId])
+  @@index([tenantId, updatedAt, id])
   @@map("sites")
 }
 
@@ -57,10 +59,12 @@ model Department {
   headEmployeeId String?  @map("head_employee_id")
   policyId       String?  @map("policy_id")
   createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at") // set by the api_set_updated_at trigger (post-init/007)
 
   employees Employee[]
 
   @@unique([tenantId, name])
+  @@index([tenantId, updatedAt, id])
   @@map("departments")
 }
 
@@ -159,16 +163,18 @@ model AttendancePolicy {
 
 /// One Supabase auth user. Platform admins have no tenant.
 model UserProfile {
-  userId             String   @id @map("user_id")
-  tenantId           String?  @map("tenant_id")
-  employeeId         String?  @unique @map("employee_id")
-  role               String // ADMIN | HR | MANAGER | EMPLOYEE | PLATFORM_ADMIN
-  displayName        String   @map("display_name")
-  email              String
-  siteIds            String[] @default([]) @map("site_ids")
-  status             String   @default("ACTIVE") // ACTIVE | DISABLED | EXITED
-  mustChangePassword Boolean  @default(true) @map("must_change_password")
-  createdAt          DateTime @default(now()) @map("created_at")
+  userId              String    @id @map("user_id")
+  tenantId            String?   @map("tenant_id")
+  employeeId          String?   @unique @map("employee_id")
+  role                String // ADMIN | HR | MANAGER | EMPLOYEE | PLATFORM_ADMIN
+  displayName         String    @map("display_name")
+  email               String
+  siteIds             String[]  @default([]) @map("site_ids")
+  status              String    @default("ACTIVE") // ACTIVE | DISABLED | EXITED
+  mustChangePassword  Boolean   @default(true) @map("must_change_password")
+  /// Platform announcements published before this were shown (org admins); null = none yet.
+  announcementsSeenAt DateTime? @map("announcements_seen_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
 
   @@index([tenantId])
   @@map("user_profiles")
@@ -181,6 +187,8 @@ model Employee {
   departmentId       String?   @map("department_id")
   managerId          String?   @map("manager_id")
   employeeCode       String    @map("employee_code")
+  /// The integrator's own id for this person (public API); unique per tenant.
+  externalId         String?   @map("external_id")
   fullName           String    @map("full_name")
   email              String?
   phone              String?
@@ -198,6 +206,34 @@ model Employee {
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
+  // Directory (all nullable: added to a live table without touching existing rows).
+  dateOfBirth        DateTime? @map("date_of_birth") @db.Date
+  gender             String? // MALE | FEMALE | OTHER
+  maritalStatus      String?   @map("marital_status") // SINGLE | MARRIED | OTHER
+  bloodGroup         String?   @map("blood_group")
+  fatherOrSpouseName String?   @map("father_or_spouse_name")
+  personalEmail      String?   @map("personal_email")
+  altPhone           String?   @map("alt_phone")
+  currentAddress     String?   @map("current_address")
+  permanentAddress   String?   @map("permanent_address")
+  emergencyName      String?   @map("emergency_name")
+  emergencyRelation  String?   @map("emergency_relation")
+  emergencyPhone     String?   @map("emergency_phone")
+  /// Sensitive (HR/admin + self only): PAN, UAN, ESIC, bank.
+  pan                String?
+  /// Never the full Aadhaar number (Aadhaar Act); the card scan goes in the document vault.
+  aadhaarLast4       String?   @map("aadhaar_last4")
+  uan                String?
+  esicNumber         String?   @map("esic_number")
+  bankAccountName    String?   @map("bank_account_name")
+  bankAccountNumber  String?   @map("bank_account_number")
+  bankIfsc           String?   @map("bank_ifsc")
+  bankName           String?   @map("bank_name")
+  paymentMode        String?   @map("payment_mode") // BANK | CASH | CHEQUE; null = BANK
+  probationEndOn     DateTime? @map("probation_end_on") @db.Date
+  confirmedOn        DateTime? @map("confirmed_on") @db.Date
+  noticePeriodDays   Int?      @map("notice_period_days")
+
   site           Site                   @relation(fields: [siteId], references: [id])
   department     Department?            @relation(fields: [departmentId], references: [id])
   manager        Employee?              @relation("Reports", fields: [managerId], references: [id])
@@ -209,8 +245,19 @@ model Employee {
   corrections    AttendanceCorrection[]
   projects       EmployeeProject[]
   fieldVisits    FieldVisit[]
+  profileChanges ProfileChangeRequest[]
+  documents      EmployeeDocument[]
+  tasks          EmployeeTask[]
+  expenses       ExpenseClaim[]
+  assets         Asset[]
+  salaries       EmployeeSalary[]
+  adjustments    PayrollAdjustment[]
+  loans          EmployeeLoan[]
+  payslips       Payslip[]
 
   @@unique([tenantId, employeeCode])
+  @@unique([tenantId, externalId])
+  @@index([tenantId, updatedAt, id])
   @@index([tenantId, status])
   @@index([managerId])
   @@index([departmentId])
@@ -316,6 +363,7 @@ model Punch {
   reviewedAt     DateTime? @map("reviewed_at")
   reviewNote     String?   @map("review_note")
   receivedAt     DateTime  @default(now()) @map("received_at")
+  updatedAt      DateTime  @default(now()) @map("updated_at") // set by the api_set_updated_at trigger (post-init/007)
 
   employee Employee? @relation(fields: [employeeId], references: [id])
   device   Device?   @relation(fields: [deviceId], references: [id])
@@ -325,6 +373,7 @@ model Punch {
   @@index([employeeId, punchedAt])
   @@index([siteId, punchedAt])
   @@index([tenantId, punchedAt])
+  @@index([tenantId, updatedAt, id])
   @@index([tenantId, reviewStatus, punchedAt])
   @@map("punches")
 }
@@ -377,35 +426,36 @@ model AttendanceDay {
   corrected         Boolean   @default(false)
   finalizedAt       DateTime? @map("finalized_at")
   computedAt        DateTime  @default(now()) @map("computed_at")
+  updatedAt         DateTime  @default(now()) @map("updated_at") // set by the api_set_updated_at trigger (post-init/007)
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, workDate])
   @@index([tenantId, workDate, status])
+  @@index([tenantId, updatedAt, id])
   @@index([siteId, workDate])
   @@index([windowEnd, finalizedAt])
   @@map("attendance_days")
 }
 
 model AttendanceCorrection {
-  id           String    @id @default(cuid())
-  tenantId     String    @map("tenant_id")
-  employeeId   String    @map("employee_id")
-  workDate     DateTime  @map("work_date") @db.Date
-  inAt         DateTime? @map("in_at") @db.Timestamptz(3)
-  outAt        DateTime? @map("out_at") @db.Timestamptz(3)
-  reason       String
-  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
-  requestedBy  String    @map("requested_by")
-  approverId   String?   @map("approver_id")
-  decidedAt    DateTime? @map("decided_at")
-  decisionNote String?   @map("decision_note")
-  /// Proof the employee attached: a field visit taken in the app.
-  fieldVisitId String?   @map("field_visit_id")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  employeeId    String    @map("employee_id")
+  workDate      DateTime  @map("work_date") @db.Date
+  inAt          DateTime? @map("in_at") @db.Timestamptz(3)
+  outAt         DateTime? @map("out_at") @db.Timestamptz(3)
+  reason        String
+  status        String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  requestedBy   String    @map("requested_by")
+  approverId    String?   @map("approver_id")
+  decidedAt     DateTime? @map("decided_at")
+  decisionNote  String?   @map("decision_note")
+  /// Proof the employee attached: field visits taken in the app (e.g. one per client visited that day).
+  fieldVisitIds String[]  @default([]) @map("field_visit_ids")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
-  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  fieldVisit FieldVisit? @relation(fields: [fieldVisitId], references: [id], onDelete: SetNull)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status])
   @@index([employeeId, workDate])
@@ -428,8 +478,7 @@ model FieldVisit {
   note           String?
   createdAt      DateTime @default(now()) @map("created_at")
 
-  employee    Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  corrections AttendanceCorrection[]
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, takenAt])
   @@map("field_visits")
@@ -536,10 +585,12 @@ model LeaveType {
   maxPerMonth         Decimal? @map("max_per_month") @db.Decimal(5, 1)
   maxRequestsPerMonth Int?     @map("max_requests_per_month")
   createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @map("updated_at") // set by the api_set_updated_at trigger (post-init/007)
 
   requests LeaveRequest[]
 
   @@unique([tenantId, code])
+  @@index([tenantId, updatedAt, id])
   @@map("leave_types")
 }
 
@@ -588,11 +639,13 @@ model LeaveRequest {
   decisionNote      String?   @map("decision_note")
   createdBy         String?   @map("created_by")
   createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @map("updated_at") // set by the api_set_updated_at trigger (post-init/007)
 
   employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
 
   @@index([tenantId, status])
+  @@index([tenantId, updatedAt, id])
   @@index([employeeId, startDate])
   @@map("leave_requests")
 }
@@ -709,6 +762,19 @@ model AppNotification {
   @@map("app_notifications")
 }
 
+/// Iverto → every org admin: shown once as a popup on their next visit. Not tenant-owned.
+model PlatformAnnouncement {
+  id          String   @id @default(cuid())
+  kind        String   @default("UPDATE") // UPDATE | FEATURE | CHANGELOG
+  title       String
+  body        String
+  publishedAt DateTime @default(now()) @map("published_at")
+  createdBy   String?  @map("created_by")
+
+  @@index([publishedAt(sort: Desc)])
+  @@map("platform_announcements")
+}
+
 /// Append-only: a trigger rejects UPDATE/DELETE (post-init/002).
 model AuditLog {
   id          String   @id @default(cuid())
@@ -727,4 +793,537 @@ model AuditLog {
   @@index([tenantId, createdAt(sort: Desc)])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+// ── HR ──────────────────────────────────────────────────────────────────────
+
+/// Employee self-service profile edit; applied only when HR approves.
+model ProfileChangeRequest {
+  id           String    @id @default(cuid())
+  tenantId     String    @map("tenant_id")
+  employeeId   String    @map("employee_id")
+  /// { field: newValue } over the whitelisted self-editable fields.
+  changes      Json
+  reason       String?
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  approverId   String?   @map("approver_id")
+  decidedAt    DateTime? @map("decided_at")
+  decisionNote String?   @map("decision_note")
+  createdBy    String?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([employeeId])
+  @@map("profile_change_requests")
+}
+
+/// Confidential file in the Azure hr-documents container.
+model EmployeeDocument {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  employeeId  String    @map("employee_id")
+  category    String // ID_PROOF | ADDRESS_PROOF | EDUCATION | EXPERIENCE | CONTRACT | LETTER | OTHER
+  name        String
+  fileKey     String    @map("file_key")
+  contentType String    @map("content_type")
+  size        Int
+  expiresOn   DateTime? @map("expires_on") @db.Date
+  verifiedAt  DateTime? @map("verified_at")
+  verifiedBy  String?   @map("verified_by")
+  uploadedBy  String?   @map("uploaded_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([tenantId, expiresOn])
+  @@map("employee_documents")
+}
+
+/// Letter body with {{placeholders}}, rendered to a PDF and filed as an EmployeeDocument.
+model LetterTemplate {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  kind      String // OFFER | APPOINTMENT | EXPERIENCE | RELIEVING | OTHER
+  name      String
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, name])
+  @@map("letter_templates")
+}
+
+/// One onboarding / offboarding checklist item. Templates live in tenant.settings.checklists.
+model EmployeeTask {
+  id           String    @id @default(cuid())
+  tenantId     String    @map("tenant_id")
+  employeeId   String    @map("employee_id")
+  kind         String // ONBOARDING | OFFBOARDING
+  title        String
+  assigneeRole String    @map("assignee_role") // HR | IT | MANAGER | EMPLOYEE
+  dueOn        DateTime? @map("due_on") @db.Date
+  doneAt       DateTime? @map("done_at")
+  doneBy       String?   @map("done_by")
+  note         String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([tenantId, doneAt])
+  @@map("employee_tasks")
+}
+
+model ExpenseClaim {
+  id                String    @id @default(cuid())
+  tenantId          String    @map("tenant_id")
+  employeeId        String    @map("employee_id")
+  category          String
+  /// Paise.
+  amount            Int
+  claimDate         DateTime  @map("claim_date") @db.Date
+  description       String
+  receiptKey        String?   @map("receipt_key")
+  receiptType       String?   @map("receipt_type")
+  fieldVisitId      String?   @map("field_visit_id")
+  status            String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  managerApproverId String?   @map("manager_approver_id")
+  managerDecidedAt  DateTime? @map("manager_decided_at")
+  approverId        String?   @map("approver_id")
+  decidedAt         DateTime? @map("decided_at")
+  decisionNote      String?   @map("decision_note")
+  createdBy         String?   @map("created_by")
+  /// Set when a payroll run reimburses it.
+  payslipId         String?   @map("payslip_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([employeeId, claimDate])
+  @@map("expense_claims")
+}
+
+/// Company asset. Assignment history is the audit log (ASSET_ASSIGNED / ASSET_RETURNED).
+model Asset {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  tag        String
+  name       String
+  category   String
+  serialNo   String?   @map("serial_no")
+  status     String    @default("IN_STOCK") // IN_STOCK | ASSIGNED | RETIRED
+  employeeId String?   @map("employee_id")
+  assignedAt DateTime? @map("assigned_at")
+  note       String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, tag])
+  @@index([employeeId])
+  @@map("assets")
+}
+
+model Announcement {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  title         String
+  body          String
+  /// Empty = everyone.
+  siteIds       String[]  @default([]) @map("site_ids")
+  departmentIds String[]  @default([]) @map("department_ids")
+  requiresAck   Boolean   @default(false) @map("requires_ack")
+  publishedAt   DateTime? @map("published_at")
+  createdBy     String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  acks AnnouncementAck[]
+
+  @@index([tenantId, publishedAt])
+  @@map("announcements")
+}
+
+model AnnouncementAck {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  announcementId String   @map("announcement_id")
+  employeeId     String   @map("employee_id")
+  ackAt          DateTime @default(now()) @map("ack_at")
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, employeeId])
+  @@map("announcement_acks")
+}
+
+// ── Payroll ─────────────────────────────────────────────────────────────────
+// Money is integer paise throughout.
+
+/// components: [{ code, name, kind: EARNING|DEDUCTION, calc: FIXED|PCT_GROSS|PCT_BASIC|BALANCE, value, prorate }]
+model SalaryStructure {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  name       String
+  components Json
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  salaries EmployeeSalary[]
+
+  @@unique([tenantId, name])
+  @@map("salary_structures")
+}
+
+/// Effective-dated: the row with the latest effectiveFrom ≤ period end applies.
+model EmployeeSalary {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  employeeId    String   @map("employee_id")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  structureId   String   @map("structure_id")
+  monthlyGross  Int      @map("monthly_gross")
+  /// { componentCode: monthly paise } replacing the structure's calculation.
+  overrides     Json     @default("{}")
+  pf            Boolean  @default(true)
+  esi           Boolean  @default(true)
+  pt            Boolean  @default(true)
+  ptState       String?  @map("pt_state")
+  createdBy     String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  employee  Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  structure SalaryStructure @relation(fields: [structureId], references: [id])
+
+  @@unique([employeeId, effectiveFrom])
+  @@map("employee_salaries")
+}
+
+model PayrollAdjustment {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  employeeId String   @map("employee_id")
+  /// Payroll month label "YYYY-MM".
+  month      String
+  kind       String // EARNING | DEDUCTION
+  code       String // BONUS | INCENTIVE | ARREARS | ADVANCE | OTHER
+  amount     Int
+  note       String?
+  payslipId  String?  @map("payslip_id")
+  createdBy  String?  @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, month])
+  @@map("payroll_adjustments")
+}
+
+/// Salary advance / loan recovered as an EMI deduction each run until repaid.
+model EmployeeLoan {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  employeeId String   @map("employee_id")
+  principal  Int
+  emi        Int
+  startMonth String   @map("start_month")
+  status     String   @default("ACTIVE") // ACTIVE | CLOSED
+  note       String?
+  createdBy  String?  @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_loans")
+}
+
+/// One per pay period. periodStart/periodEnd are frozen at creation (cycle settings may change later).
+model PayrollRun {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  month       String
+  periodStart DateTime  @map("period_start") @db.Date
+  periodEnd   DateTime  @map("period_end") @db.Date
+  status      String    @default("DRAFT") // DRAFT | APPROVED | PAID
+  lockedAt    DateTime? @map("locked_at")
+  totals      Json      @default("{}")
+  warnings    Json      @default("[]")
+  createdBy   String?   @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  computedAt  DateTime  @default(now()) @map("computed_at")
+  approvedBy  String?   @map("approved_by")
+  approvedAt  DateTime? @map("approved_at")
+  paidBy      String?   @map("paid_by")
+  paidAt      DateTime? @map("paid_at")
+
+  payslips Payslip[]
+
+  @@unique([tenantId, month])
+  @@index([tenantId, periodStart])
+  @@map("payroll_runs")
+}
+
+model Payslip {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  runId           String   @map("run_id")
+  employeeId      String   @map("employee_id")
+  /// Frozen payable-days inputs.
+  attendance      Json
+  /// [{ code, name, kind: EARNING|DEDUCTION|EMPLOYER, amount }]
+  lines           Json
+  gross           Int
+  deductions      Int
+  net             Int
+  employerContrib Int      @map("employer_contrib")
+  paymentMode     String   @default("BANK") @map("payment_mode")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  run      PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee Employee   @relation(fields: [employeeId], references: [id])
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+  @@map("payslips")
+}
+
+// ── Public API (docs/public-api.md) ─────────────────────────────────────────
+
+/// A developer API key. Only an HMAC of the secret is stored; the plaintext is shown once.
+model ApiKey {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  /// Public lookup half of ivk_live_<keyId>_<secret><crc>.
+  keyId           String    @unique @map("key_id")
+  secretHash      String    @map("secret_hash")
+  hashAlgo        String    @default("hmac-sha256") @map("hash_algo")
+  pepperVersion   Int       @default(1) @map("pepper_version")
+  last4           String
+  name            String
+  description     String?
+  purpose         String?
+  integratorName  String?   @map("integrator_name")
+  environment     String    @default("live") // live | test
+  /// Iverto-Version pinned at creation.
+  apiVersion      String    @map("api_version")
+  /// Permission ids from public-api/registry.ts.
+  scopes          String[]
+  /// Empty = every site.
+  siteIds         String[]  @map("site_ids")
+  /// CIDRs; empty = any address (unless the org policy requires one).
+  ipAllowlist     String[]  @map("ip_allowlist")
+  rateLimitPerMin Int?      @map("rate_limit_per_min")
+  /// Monthly credits this key may spend (credits must be on for the org).
+  creditCap       Int?      @map("credit_cap")
+  piiAccess       Boolean   @default(false) @map("pii_access")
+  status          String    @default("ACTIVE") // PENDING_APPROVAL | ACTIVE | DISABLED | REVOKED
+  disabledReason  String?   @map("disabled_reason")
+  expiresAt       DateTime? @map("expires_at")
+  rotatedFromId   String?   @map("rotated_from_id")
+  lastUsedAt      DateTime? @map("last_used_at")
+  lastUsedIp      String?   @map("last_used_ip")
+  /// Ed25519 public key (base64, 32 raw bytes) for optional request signing (§2).
+  signingPublicKey String?  @map("signing_public_key")
+  /// Refuse unsigned requests once a signing key is set.
+  requireSignature Boolean  @default(false) @map("require_signature")
+  createdBy       String    @map("created_by")
+  approvedBy      String?   @map("approved_by")
+  approvedAt      DateTime? @map("approved_at")
+  revokedBy       String?   @map("revoked_by")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, status])
+  @@map("api_keys")
+}
+
+/// Append-only. tenantId null = platform default; the highest version per tenant is in force; policy null = inherit the default.
+model ApiPolicyVersion {
+  id        String   @id @default(cuid())
+  tenantId  String?  @map("tenant_id")
+  version   Int
+  policy    Json?
+  note      String?
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, version])
+  @@map("api_policy_versions")
+}
+
+/// One row per public API request. INSERT/SELECT only for the app role (post-init/007).
+model ApiRequestLog {
+  id          String   @id // = X-Request-Id
+  tenantId    String?  @map("tenant_id")
+  apiKeyId    String?  @map("api_key_id")
+  operationId String?  @map("operation_id")
+  method      String
+  path        String
+  status      Int
+  errorCode   String?  @map("error_code")
+  latencyMs   Int      @map("latency_ms")
+  reqBytes    Int      @default(0) @map("req_bytes")
+  resBytes    Int      @default(0) @map("res_bytes")
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  credits     Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([apiKeyId, createdAt(sort: Desc)])
+  @@map("api_request_logs")
+}
+
+/// Credit top-ups and adjustments. Spend is SUM(api_request_logs.credits) for the month.
+model ApiCreditLedger {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  /// YYYY-MM the grant applies to.
+  month     String
+  delta     Int
+  reason    String // TOPUP | ADJUSTMENT
+  note      String?
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, month])
+  @@map("api_credit_ledger")
+}
+
+/// Tombstones for incremental sync, written by the api_tombstone trigger (post-init/007).
+model DeletedRecord {
+  id        BigInt   @id @default(autoincrement())
+  tenantId  String   @map("tenant_id")
+  resource  String
+  recordId  String   @map("record_id")
+  siteId    String?  @map("site_id")
+  deletedAt DateTime @default(now()) @map("deleted_at")
+
+  @@index([tenantId, resource, deletedAt, recordId])
+  @@map("deleted_records")
+}
+
+/// Outbox + event log (docs/public-api.md §10). Rows are written by triggers (post-init/008)
+/// in the same transaction as the change, only for tenants that use the API. 30-day retention.
+model ApiEvent {
+  id           String    @id // evt_<32 hex>
+  tenantId     String    @map("tenant_id")
+  siteId       String?   @map("site_id")
+  type         String
+  data         Json
+  /// ping only: delivered to this endpoint instead of fanned out.
+  endpointId   String?   @map("endpoint_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  dispatchedAt DateTime? @map("dispatched_at")
+
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId, createdAt, id])
+  @@map("api_events")
+}
+
+model WebhookEndpoint {
+  id                      String    @id @default(cuid())
+  tenantId                String    @map("tenant_id")
+  url                     String
+  description             String?
+  /// Event types from public-api/registry.ts EVENTS; explicit, no wildcards.
+  events                  String[]
+  /// AES-256-GCM, key derived from the API pepper (webhooks.ts).
+  secretEncrypted         String    @map("secret_encrypted")
+  previousSecretEncrypted String?   @map("previous_secret_encrypted")
+  previousSecretUntil     DateTime? @map("previous_secret_until")
+  status                  String    @default("ACTIVE") // ACTIVE | DISABLED
+  disabledReason          String?   @map("disabled_reason")
+  /// First failure of the current failing streak; null when the last delivery succeeded.
+  failingSince            DateTime? @map("failing_since")
+  createdBy               String    @map("created_by")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId])
+  @@map("webhook_endpoints")
+}
+
+/// One event to one endpoint; holds the latest attempt. 30-day retention.
+model WebhookDelivery {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  endpointId      String    @map("endpoint_id")
+  eventId         String    @map("event_id")
+  status          String    @default("PENDING") // PENDING | SUCCEEDED | FAILED
+  attempts        Int       @default(0)
+  nextAttemptAt   DateTime  @default(now()) @map("next_attempt_at")
+  /// Claimed by a sender until then; a crashed sender's claim simply expires.
+  lockedUntil     DateTime? @map("locked_until")
+  responseStatus  Int?      @map("response_status")
+  /// First 1 KB of the response body, never parsed.
+  responseSnippet String?   @map("response_snippet")
+  latencyMs       Int?      @map("latency_ms")
+  error           String?
+  deliveredAt     DateTime? @map("delivered_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event    ApiEvent        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt(sort: Desc)])
+  @@index([eventId])
+  @@map("webhook_deliveries")
+}
+
+/// Async work started through the public API (docs/public-api.md §12): bulk employee upserts run
+/// by public-api/jobs.ts; report jobs wrap a ReportJob, whose status a trigger copies here
+/// (post-init/009). 30-day retention.
+model ApiJob {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  apiKeyId    String    @map("api_key_id")
+  type        String // employees.bulk_upsert | report
+  status      String    @default("QUEUED") // QUEUED | RUNNING | SUCCEEDED | PARTIALLY_SUCCEEDED | FAILED
+  input       Json
+  /// { processed, total }
+  progress    Json      @default("{}")
+  result      Json?
+  /// { code, message } when FAILED.
+  error       Json?
+  reportJobId String?   @unique @map("report_job_id")
+  /// Rows finished (bulk): a crashed worker resumes here.
+  checkpoint  Int       @default(0)
+  lockedUntil DateTime? @map("locked_until")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  expiresAt   DateTime  @map("expires_at")
+
+  @@index([tenantId, createdAt, id])
+  @@index([status, type])
+  @@map("api_jobs")
+}
+
+/// Usage alerts and key hygiene (docs/public-api.md §15). Also the 24 h throttle: one per (tenant, key, type, level).
+model ApiAlert {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  apiKeyId  String?  @map("api_key_id")
+  /// rate_limit | quota | credits | key_expiring | key_stale | key_disabled | webhook_failing | error_spike | auth_anomaly
+  type      String
+  level     String   @default("warning") // warning | critical
+  message   String
+  data      Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, type, createdAt])
+  @@map("api_alerts")
 }

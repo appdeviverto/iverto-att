@@ -55,6 +55,7 @@ All errors thrown by the application follow the standardized RFC-compliant error
 | `401` | `UNAUTHORIZED` | Missing, expired, or malformed Bearer token. |
 | `403` | `FORBIDDEN` | Caller lacks the role or permission required for the operation. |
 | `403` | `TENANT_SUSPENDED`| The tenant is deactivated. User login blocked until reactivation. |
+| `403` | `FEATURE_DISABLED` | The route belongs to a module (HR or payroll, `details.feature`) the platform hasn't switched on for this tenant (§2.6a). |
 | `403` | `PASSWORD_CHANGE_REQUIRED` | Initial temporary password must be replaced via `/v1/auth/password`. |
 | `403` | `MFA_REQUIRED` | The session has not passed a two-factor (TOTP) check. Every web route needs an `aal2` Supabase session; only `/v1/mobile/*`, `/v1/auth/*`, `GET /v1/org`, `GET /v1/departments` and `GET /v1/attendance/overview` accept password-only sessions. |
 | `404` | `NOT_FOUND` | Requested entity does not exist. |
@@ -115,9 +116,11 @@ Initializes a new isolated tenant along with its initial site, holiday calendar,
   "admin": {
     "fullName": "Jane Doe",
     "email": "jane.doe@acme.com"
-  }
+  },
+  "features": { "hr": true, "payroll": false }
 }
 ```
+`features` is optional; a module left out starts off (see §2.6a).
 
 #### Response `201 Created`
 ```json
@@ -184,6 +187,24 @@ Restores tenant status to `ACTIVE`.
 
 ---
 
+### 2.6a Switch Modules (HR, Payroll)
+```http
+PATCH /v1/platform/tenants/:id/features
+```
+Attendance, leave and the employee directory are always on; HR and payroll are paid modules switched on per tenant. Send only the modules to change:
+```json
+{ "payroll": false }
+```
+Returns the tenant; `settings.features` holds `{ "hr": boolean, "payroll": boolean }` (a tenant created before modules existed has none, which means both off). Audited as `TENANT_MODULES_UPDATED`. Tenant admins can't change this: `features` isn't accepted by `PATCH /v1/org`.
+
+While a module is off:
+- its routes answer `403 FEATURE_DISABLED` within 60 seconds (the same cache as suspension). HR covers documents, letters, checklists and tasks, the org chart, expenses (including `/mobile/approvals?type=expense`), assets, announcements and `/hr/settings`. Payroll covers `/payroll/*`, `/employees/:id/salaries` and `/employees/:id/payslips`, plus the mobile payslip routes;
+- payroll runs no longer lock attendance, new employees and exits get no checklist tasks, document-expiry reminders stop, and the import ignores salary columns (the template and `/employees/import/columns` leave them out).
+
+Nothing is deleted: switching a module back on restores all of its data. `GET /v1/org` returns `settings.features` for the web to hide what is off.
+
+---
+
 ### 2.7 Retry Tenant Provisioning
 ```http
 POST /v1/platform/tenants/:id/retry-admin
@@ -206,6 +227,27 @@ Generates a new temporary password for the initial tenant administrator and flag
   "temporaryPassword": "Temp-9uP#1aQ8*zR"
 }
 ```
+
+---
+
+### 2.9 Platform Announcements ("What's new" for org admins)
+```http
+GET    /v1/platform/announcements        # newest first, up to 200
+POST   /v1/platform/announcements
+DELETE /v1/platform/announcements/:id    # 204; withdraws it
+```
+Platform admins only. Publishes immediately to the admins of every tenant:
+```json
+{ "kind": "FEATURE", "title": "Payroll is here", "body": "Plain text, line breaks kept (max 5000)" }
+```
+`kind` is `FEATURE`, `UPDATE` or `CHANGELOG`; the title is 3–140 characters. Returns `{ id, kind, title, body, publishedAt, createdBy }`. Audited as `PLATFORM_ANNOUNCEMENT_PUBLISHED` / `PLATFORM_ANNOUNCEMENT_DELETED`.
+
+Org admins (role `ADMIN`; not HR, and not a platform admin using "Open as admin") read them as a popup shown once:
+```http
+GET  /v1/whats-new         # unseen, newest first, up to 10
+POST /v1/whats-new/seen    # 204; marks everything published so far as seen
+```
+"Unseen" means published after the admin last called `/whats-new/seen`, or after their account was created if they never have, so a new admin doesn't get the backlog. Other roles get `403`.
 
 ---
 
@@ -375,6 +417,8 @@ PATCH /v1/org
 
 ---
 
+**Company letterhead** (`branding` in `PATCH /v1/org`): besides `displayName`, `logoUrl` (https) and `primaryColor`, it takes `legalName`, `address` (line breaks kept), `phone`, `email`, `website` and `registration` (e.g. "CIN … · GSTIN …"). These print at the top of payslips and letters and under the band of report PDFs. Letter templates can use `{{org.address}}`, `{{org.phone}}`, `{{org.email}}` and `{{org.website}}`.
+
 ### 4.2 Sites (`/v1/sites`)
 Sites define physical workplace boundaries and legal timezone contexts.
 - `GET /v1/sites`: List tenant sites.
@@ -480,44 +524,61 @@ Creates an employee, establishes their initial schedule (default shift or specif
 
 ---
 
-### 5.3 Bulk CSV Import
+### 5.3 Bulk Import & Update (Excel or CSV)
 ```http
+GET  /v1/employees/import/columns
+GET  /v1/employees/import/template.xlsx?siteId=&prefill=false
+POST /v1/employees/import/read
 POST /v1/employees/import
 ```
-Processes an RFC 4180 CSV file (max 5000 rows). Can run in dry-run mode (`commit: false`) to validate relations, headers, and uniqueness before applying.
+All four are `ADMIN` / `HR`.
 
-#### CSV Header Format
-```csv
-employeeCode,fullName,siteName,departmentName,managerCode,email,phone,designation,employmentType,joinedOn,mobilePunch
-```
-Pass `siteId` to import a whole file into one location; `siteName` is then not needed. `joinedOn` must be a real `YYYY-MM-DD` date; `mobilePunch` and `employmentType` are case-insensitive.
+**The column registry** (`GET /import/columns`) lists every column the import understands: `key`, `label`, `section` (Basics · Job · Personal · Contact & emergency · Statutory IDs · Bank · Salary), `required`, `rule`, `example`, `type`, `values` (for enums), `aka` (accepted header spellings), and `virtual` / `sensitive` / `selfEditable`. Headers are matched by key, by label (a trailing `*` is ignored) or by any `aka` spelling, ignoring case, spaces and punctuation. Unknown headers are ignored and listed in `ignoredColumns`.
 
-Dry-run errors name the column at fault, so a client can highlight the cell:
+**The Excel template** (`GET /import/template.xlsx`) is built for the tenant:
+- Dropdowns list its own sites, departments, employment types, salary structures, the enum values, and (as a suggestion list) existing employee codes.
+- Date columns are date cells. PAN, IFSC, UAN and Aadhaar-last-4 have length checks, and ID and account columns are text cells, so leading zeros and 15-digit account numbers survive.
+- Each header has a note with its rule and an example. Required headers are marked `*`.
+- An Instructions sheet carries a column dictionary.
+- `siteId` drops the Site column. With `prefill=true` you get the same workbook filled with the current active employees in scope, for the edit-and-re-upload loop. This export is audited as `EMPLOYEES_EXPORTED`.
+
+**Reading a workbook**: `POST /import/read { "fileBase64": "<xlsx>" }` returns `{ "rows": string[][] }`, header first. It reads the first visible sheet that has an Employee code header row, skipping the title and section rows above it. Dates come back as `YYYY-MM-DD` and numbers as plain digits. Send the rows on as CSV.
+
+**Importing**: `POST /import`
 ```json
-{ "committed": false, "total": 2, "valid": 1, "invalid": 1,
-  "errors": [{ "line": 3, "errors": [{ "field": "departmentName", "message": "unknown department \"Opps\"" }] }] }
+{ "csv": "...", "mode": "CREATE", "siteId": "<optional>", "commit": false, "biometricConsent": true }
 ```
+- `mode: "CREATE"` (default) adds new employees. A code that already exists is an error.
+- `mode: "UPSERT"` updates existing employees matched by `employeeCode`: a **blank cell keeps** the current value, a single **`-` clears** it (not allowed on required fields). Codes not found are created.
+- `siteId` is the site new employees join. Without it, new rows need a Site column. In UPSERT mode a Site cell moves the person.
+- Required columns: CREATE needs `employeeCode`, `fullName`, `joinedOn` (+ `siteName` without `siteId`). UPSERT needs only `employeeCode`.
+- **Dates** may be `YYYY-MM-DD`, `DD/MM/YYYY`, `DD-MM-YYYY` or `DD.MM.YYYY` (day first). PAN and IFSC are upper-cased and spaces are removed.
+- **Aadhaar**: only the last 4 digits are stored. A full 12-digit number is refused with a message saying so.
+- **Salary**: `monthlyGross` (₹) with `salaryStructure` (by name) creates or revises an effective-dated salary. The structure may be left blank when the employee already has one, or when the tenant has exactly one. `salaryEffectiveFrom` defaults to the joining date (new) or the 1st of the current month (update).
+- Managers may be existing employees or rows further down the same file.
 
-#### Request Body
+Dry run (`commit: false`):
 ```json
-{
-  "csv": "employeeCode,fullName,siteName,departmentName,managerCode,email,phone,designation,joinedOn,mobilePunch\nEMP-101,John Smith,Main Plant,Quality Control,,john@acme.com,,Inspector,2026-04-01,NEVER",
-  "commit": true,
-  "biometricConsent": true
-}
+{ "committed": false, "mode": "UPSERT", "total": 3, "valid": 2, "invalid": 1, "creates": 1, "updates": 2, "ignoredColumns": ["Notes"],
+  "errors": [{ "line": 3, "errors": [{ "field": "pan", "message": "PAN must look like ABCDE1234F" }] }],
+  "sample": [{ "line": 2, "op": "UPDATE", "employeeCode": "EMP001", "designation": "Lead" }] }
 ```
+Commit returns the same plus `createdIds` and `updatedIds`. A file with any invalid row is refused (`400 IMPORT_INVALID`, `details` = the errors). New employees get their onboarding checklist. Audit: `EMPLOYEES_IMPORTED { mode, created, updated }`, plus `SALARY_SET` per salary.
 
-#### Response `200 OK`
-```json
-{
-  "committed": true,
-  "total": 1,
-  "valid": 1,
-  "invalid": 0,
-  "errors": [],
-  "createdIds": ["88cfc843-e6ef-4613-8991-ecff02a9e334"]
-}
-```
+### 5.3a Directory fields
+`POST /v1/employees` and `PATCH /v1/employees/:id` accept, on top of the fields in 5.2:
+
+| Section | Fields |
+|---|---|
+| Job | `probationEndOn`, `confirmedOn` (dates), `noticePeriodDays` (0–365) |
+| Personal | `dateOfBirth`, `gender` (`MALE`·`FEMALE`·`OTHER`), `maritalStatus` (`SINGLE`·`MARRIED`·`OTHER`), `bloodGroup` (`A+`…`O-`), `fatherOrSpouseName` |
+| Contact & emergency | `personalEmail`, `altPhone`, `currentAddress`, `permanentAddress`, `emergencyName`, `emergencyRelation`, `emergencyPhone` |
+| Statutory IDs | `pan` (`ABCDE1234F`), `aadhaarLast4` (4 digits), `uan` (12 digits), `esicNumber` |
+| Bank | `paymentMode` (`BANK`·`CASH`·`CHEQUE`, null = BANK), `bankAccountName`, `bankAccountNumber` (6–20 digits), `bankIfsc` (`HDFC0001234`), `bankName` |
+
+`null` clears a field. Values are validated against the same registry as the import (`400 INVALID_FIELD` names the field). **PAN, Aadhaar-last-4, UAN, ESIC and bank details are returned only to ADMIN/HR and to the employee themself.** A manager sees the rest of the profile without them.
+
+`GET /v1/employees/org-chart` (any role) returns every active employee in the caller's sites as `{ id, employeeCode, fullName, designation, managerId, department, site }`, for drawing the reporting tree.
 
 ---
 
@@ -525,7 +586,7 @@ Dry-run errors name the column at fault, so a client can highlight the cell:
 ```http
 GET /v1/employees/:id
 ```
-Returns employee record, active system login account status, recent work schedules, terminal slot bindings, and face template synchronization state.
+Returns employee record (with the directory fields of 5.3a; sensitive ones only for HR/admin/self), active system login account status, recent work schedules, terminal slot bindings, and face template synchronization state.
 
 ---
 
@@ -981,10 +1042,10 @@ POST /v1/attendance/corrections
   "in": "09:00",
   "out": "18:00",
   "reason": "Biometric terminal failed to read face at checkout",
-  "fieldVisitId": "fv-31"
+  "fieldVisitIds": ["fv-31", "fv-32"]
 }
 ```
-`fieldVisitId` (optional) attaches one of that employee's field visits as proof (`400 BAD_PROOF` otherwise). Listed corrections carry `fieldVisit` (`{ id, takenAt, lat, lng, accuracy, isMockLocation, note, photoUrl }` or `null`).
+`fieldVisitIds` (optional, up to 10) attaches that employee's field visits as proof, e.g. one per client visited that day; any visit that isn't theirs → `400 BAD_PROOF`. The older single `fieldVisitId` is still accepted. Listed corrections carry `fieldVisits` (`[{ id, takenAt, lat, lng, accuracy, isMockLocation, note, photoUrl }]`, oldest first, `[]` when none) and, for older clients, `fieldVisit` (the first of them, or `null`).
 
 ### 11.2a Field Visits
 ```http
@@ -1125,6 +1186,7 @@ Returns list of available report engines:
 6. `overtime`: Overtime summaries and compliance tracking.
 7. `leave`: Leave utilization and balance summaries.
 8. `absenteeism`: Unplanned absenteeism rates and patterns.
+9. `payable-days`: Payroll input per employee — employed days, absences, late penalty, unpaid leave, LOP, paid days, OT (same maths as a payroll run, §18.5).
 
 ---
 
@@ -1285,3 +1347,224 @@ Validates connectivity across all critical dependencies:
 }
 ```
 If any check fails, returns `503 Service Unavailable` with `"code": "NOT_READY"`.
+
+---
+
+## 17. HR (`/v1/hr`, documents, letters, tasks, expenses, assets, announcements, profile changes)
+
+> Confidential files (documents, generated letters, expense receipts) are stored in a private Azure Blob container (`AZURE_STORAGE_CONTAINER_DOCUMENTS`, default `hr-documents`). They are opened only through **5-minute read-only SAS links**, and only after the access check.
+
+### 17.1 HR settings
+```http
+GET /v1/hr/settings          (any role)
+PUT /v1/hr/settings          (ADMIN, HR)
+```
+```json
+{
+  "checklists": {
+    "ONBOARDING":  [{ "title": "Collect ID and address proofs", "assigneeRole": "HR", "dueDays": 0 }],
+    "OFFBOARDING": [{ "title": "Exit interview", "assigneeRole": "HR", "dueDays": -1 }]
+  },
+  "expenseCategories": ["Travel", "Food", "..."],
+  "assetCategories": ["Laptop", "Mobile phone", "..."],
+  "expenseRequiresHrApproval": true
+}
+```
+`assigneeRole` is `HR` | `IT` | `MANAGER` | `EMPLOYEE`. `dueDays` counts from the joining date (onboarding) or the exit date (offboarding; negative = before). GET also returns `documentCategories` and `taskRoles`.
+
+### 17.2 On/offboarding checklists
+- `GET /v1/employees/:id/tasks` (scoped): one employee's tasks.
+- `POST /v1/employees/:id/tasks` (ADMIN, HR): `{ kind, title, assigneeRole, dueOn? }`.
+- `GET /v1/tasks/mine?all=false`: the caller's to-do list. HR/admin see HR and IT tasks in scope, a manager sees their team's MANAGER tasks, and everyone sees their own EMPLOYEE tasks. Each item carries `overdue`.
+- `POST /v1/tasks/:id/done { note? }`, `POST /v1/tasks/:id/reopen`, `DELETE /v1/tasks/:id` (HR).
+
+Tasks are created automatically: onboarding on `POST /employees` (and import), offboarding on `POST /employees/:id/offboard`. Offboarding adds one "Return …" task per asset still assigned.
+
+### 17.3 Document vault
+```http
+GET    /v1/employees/:id/documents
+POST   /v1/employees/:id/documents
+GET    /v1/documents/:id/url            → { url, expiresInSeconds: 300, contentType }
+POST   /v1/documents/:id/verify         (ADMIN, HR)
+DELETE /v1/documents/:id                (ADMIN, HR)
+GET    /v1/documents/expiring?days=30   (ADMIN, HR)
+```
+Only HR/admin (in scope) and the employee themself can list or open documents; a manager gets `404`. Upload body:
+```json
+{ "category": "ID_PROOF", "name": "Passport", "expiresOn": "2031-05-01", "fileName": "passport.pdf", "contentType": "application/pdf", "dataBase64": "..." }
+```
+- `category` is one of `ID_PROOF`, `ADDRESS_PROOF`, `EDUCATION`, `EXPERIENCE`, `CONTRACT`, `LETTER`, `OTHER`. `LETTER` is HR-only.
+- Files are JPEG, PNG or PDF, at most 5 MB, with the type checked by magic bytes.
+- An HR upload is marked verified at once.
+- A daily job (`document-expiry`) notifies HR/admins and the employee 30 and 7 days before `expiresOn`.
+
+Opening a document is audited (`DOCUMENT_OPENED`).
+
+### 17.4 Letters
+```http
+GET    /v1/letter-templates                          the organisation's templates
+GET    /v1/letter-templates/library                  ready-made starting points: { key, kind, name, description, placeholders }
+POST   /v1/letter-templates/library/:key/adopt       copy one in ("Offer letter (2)" if the name is taken) → the new template
+GET    /v1/letter-templates/fields                   placeholder chips: { key, label, group: Employee|Salary|Company|Letter, sample }
+POST   /v1/letter-templates/render { body, employeeId? }   live preview of unsaved text → { text, missing }
+POST   /v1/letter-templates ; PATCH/DELETE /v1/letter-templates/:id      { kind, name, body }
+POST   /v1/employees/:id/letters { "templateId": "...", "extra": { ... }, "save": true }
+```
+All `ADMIN` / `HR`. Starting points: offer, appointment, confirmation, salary revision, experience and relieving letters. Nothing is created automatically; Settings → Letters copies the ones you want.
+
+- **Placeholders** are written `{{employee.fullName}}` etc. `GET …/fields` lists them all with human labels; company fields come from the letterhead settings (§4.1).
+- **Preview:** `render` fills unsaved editor text for a chosen employee, or with sample values when `employeeId` is omitted. `missing` lists placeholders that came out blank or are unknown.
+- **Generate:** `POST /employees/:id/letters` renders the template on the company letterhead and files it as a `LETTER` document (`save: false` returns `{ text, missing }` only).
+
+### 17.5 Expense claims
+```http
+GET  /v1/expenses?status=&employeeId=&awaitingMe=&unpaid=&cursor=&limit=
+POST /v1/expenses
+POST /v1/expenses/:id/approve|reject|cancel        { "note": "..." }
+POST /v1/expenses/:id/paid-outside-payroll         (ADMIN, HR)
+```
+Submit (the employee):
+```json
+{ "category": "Travel", "amount": 1250.50, "claimDate": "2026-11-12", "description": "Cab to client site", "receiptBase64": "...", "receiptType": "image/jpeg", "fieldVisitId": "<optional>" }
+```
+- **Approval** works like remote work: the manager, then HR when `expenseRequiresHrApproval` is on. HR/admin approval is final.
+- **Rejection** needs a reason.
+- **Response:** each claim carries `progress` (the approval tracker), `amount` in rupees, `receiptUrl` (a 5-minute link), `reimbursed` and `reimbursedOutsidePayroll`.
+- **Reimbursement:** approved, unreimbursed claims dated on or before a pay period's end are paid in that payroll run as `REIMBURSEMENT` lines. Approving the run marks them reimbursed.
+
+### 17.6 Assets
+```http
+GET  /v1/assets?status=&employeeId=&category=&q=
+POST /v1/assets ; PATCH /v1/assets/:id                    (ADMIN, HR) { tag, name, category, serialNo?, note? }
+POST /v1/assets/:id/assign { "employeeId": "..." }        (ADMIN, HR)
+POST /v1/assets/:id/return { "status": "IN_STOCK" | "RETIRED" }
+POST /v1/assets/:id/retire ; GET /v1/assets/:id/history   (ADMIN, HR)
+```
+`tag` is unique per tenant. Status is `IN_STOCK` → `ASSIGNED` → back to `IN_STOCK` or `RETIRED`. History is the asset's audit trail. Non-HR callers see only assets assigned to people in their scope.
+
+### 17.7 Announcements
+```http
+GET  /v1/announcements                         HR: all, with acks/audience counts · others: published ones that reach them, with ackAt
+POST /v1/announcements ; PATCH /v1/announcements/:id      (drafts only)
+POST /v1/announcements/:id/publish             → notifies the audience (push + inbox, type ANNOUNCEMENT)
+POST /v1/announcements/:id/ack
+GET  /v1/announcements/:id/acks                (ADMIN, HR) who has / hasn't acknowledged
+DELETE /v1/announcements/:id
+```
+Body: `{ title, body, siteIds?: [], departmentIds?: [], requiresAck?: false }`. Empty lists mean everyone. A published announcement cannot be edited.
+
+### 17.8 Profile change requests
+```http
+GET  /v1/profile-requests?status=&employeeId=     HR/admin: all in scope; others: their own
+POST /v1/profile-requests { "changes": { "bankIfsc": "HDFC0001234", "currentAddress": "..." }, "reason": "Moved house" }
+POST /v1/profile-requests/:id/approve|reject     (ADMIN, HR)
+POST /v1/profile-requests/:id/cancel             (the employee)
+```
+- **Self-editable fields:** personal, contact and emergency details, statutory IDs and bank details. Fields marked `selfEditable` in `/employees/import/columns` can be requested; anything else gets `400 NOT_SELF_EDITABLE`.
+- **One at a time:** only one request can be pending per employee.
+- **Approval:** nothing changes until HR approves. Approval re-validates the values and applies them in one transaction.
+- **Response:** each request includes `before` (current values) for the diff.
+
+---
+
+## 18. Payroll (`/v1/payroll`)
+
+> **Access Control**: `ADMIN`, `HR` unless stated. Money in requests is **rupees**. Payroll run detail and payslip `lines` are **paise** (integers); payslip and salary reads for people are rupees.
+
+### 18.1 Settings: pay cycle, locking, statutory
+```http
+GET /v1/payroll/settings ; PUT /v1/payroll/settings
+```
+| Field | Default | Meaning |
+|---|---|---|
+| `cycleStartDay` | 1 | 1–28. Month *M* covers day D of M−1 to day D−1 of M (26 → Nov = 26 Oct – 25 Nov). 1 = calendar month. |
+| `payDay` | 1 | Credit day, printed on payslips |
+| `lockOn` | `APPROVED` | `APPROVED` · `PAID` · `MANUAL` |
+| `lockMode` | `BLOCK` | `BLOCK`: a locked period refuses attendance changes. `SNAPSHOT_ONLY`: changes allowed, shown as drift |
+| `lockGraceDays` | 0 | Days after the period end before an automatic lock applies |
+| `otEnabled`, `otMultiplier`, `otBase`, `standardHoursPerDay` | true, 2, `GROSS`, 8 | OT pay = hours × (base ÷ days in period ÷ hours/day) × multiplier |
+| `pfRate`, `pfWageCap` | 12, 15000 | PF employee and employer on min(earned Basic + DA, cap) |
+| `esiEmployeeRate`, `esiEmployerRate`, `esiThreshold` | 0.75, 3.25, 21000 | ESI when the full monthly gross ≤ threshold; on earned gross; rounded up to the rupee |
+| `ptSlabs`, `defaultPtState` | KA, MH examples | `{ "KA": [{ "min": 0, "amount": 0 }, { "min": 25000, "amount": 200, "febAmount": 300 }] }`. Verify against the current state notification |
+
+**Gapless periods:** the next run starts the day after the previous run's `periodEnd`. Changing `cycleStartDay` therefore makes one transition period (flagged in the run's warnings), never a gap or an overlap. Each run freezes its `periodStart` and `periodEnd`.
+
+### 18.2 Period lock
+When a run's period is locked (per `lockOn`, after `lockGraceDays`, or by a manual lock) and `lockMode` is `BLOCK`, these return **`409 PAYROLL_LOCKED`**, with `details: { month, periodStart, periodEnd }`, for any date inside the period:
+- submitting or approving attendance corrections
+- submitting, approving or cancelling (when already approved) leave
+- remote-work requests and decisions
+- rejecting a mobile check-in
+- manual punches
+
+Terminal punches are never refused; the run shows the drift instead (18.5).
+
+### 18.3 Salary structures & salaries
+```http
+GET/POST /v1/payroll/structures ; PATCH /v1/payroll/structures/:id
+GET  /v1/employees/:id/salaries        (HR/admin, or the employee)
+POST /v1/employees/:id/salaries        (ADMIN, HR)
+```
+Structure:
+```json
+{ "name": "Standard", "components": [
+  { "code": "BASIC", "name": "Basic", "kind": "EARNING", "calc": "PCT_GROSS", "value": 50, "prorate": true },
+  { "code": "HRA", "name": "House rent allowance", "kind": "EARNING", "calc": "PCT_BASIC", "value": 50, "prorate": true },
+  { "code": "SPECIAL", "name": "Special allowance", "kind": "EARNING", "calc": "BALANCE", "value": 0, "prorate": true } ] }
+```
+- `calc` is `FIXED` (₹/month), `PCT_GROSS`, `PCT_BASIC` or `BALANCE` (the rest of gross; at most one).
+- Components are worked out in order: fixed and % of gross, then % of Basic, then the balance.
+- PF uses the `BASIC` (+ `DA`) components.
+- A "Standard" structure is seeded on first `GET`.
+
+Salary: `{ effectiveFrom, structureId, monthlyGross, overrides?: { HRA: 4000 }, pf?, esi?, pt?, ptState? }`. Saving the same `effectiveFrom` again revises that row. The row with the latest `effectiveFrom` on or before the period end applies.
+
+### 18.4 Adjustments & loans
+```http
+GET  /v1/payroll/adjustments?month=&employeeId= ; POST /v1/payroll/adjustments ; DELETE /v1/payroll/adjustments/:id
+GET  /v1/payroll/loans?employeeId= ; POST /v1/payroll/loans ; POST /v1/payroll/loans/:id/close
+```
+- **Adjustment:** `{ employeeId | employeeIds: [...], month: "2026-11", kind: "EARNING" | "DEDUCTION", code: "BONUS" | "INCENTIVE" | "ARREARS" | "ADVANCE" | "OTHER", amount, note? }`. `employeeIds` adds the same adjustment for several people in one transaction and returns the created rows. It is refused for a month whose run is no longer a draft.
+- **Loan:** `{ employeeId, principal, emi, startMonth, note? }`. The EMI (capped at what is outstanding) is deducted in every run from `startMonth`, and the loan closes itself when repaid. `recovered` and `outstanding` are derived from approved payslips.
+
+### 18.5 Runs
+```http
+GET    /v1/payroll/runs
+POST   /v1/payroll/runs { "month": "2026-11", "force": false }   create or recompute the month's DRAFT
+GET    /v1/payroll/runs/:id                                     run + payslips + drift
+POST   /v1/payroll/runs/:id/approve | paid | lock
+POST   /v1/payroll/runs/:id/unlock                              (ADMIN)
+DELETE /v1/payroll/runs/:id                                     latest draft only
+GET    /v1/payroll/runs/:id/bank-file.csv                       approved/paid; BANK-mode payslips with net > 0
+GET    /v1/payroll/runs/:id/register.csv                        one row per employee, every component a column
+```
+**Payable days** per employee:
+- employed days = the period ∩ `joinedOn..exitOn`
+- LOP = absences × the policy's `absenceDeduction` (half days and "half leave + half absent" count ½) + late penalty (`lateDeduction` every `lateDeductionEvery`) + unpaid-leave portions
+- paid days = employed − LOP
+- earnings are prorated by paid days ÷ days in the period
+
+The same numbers appear in the `payable-days` report (§14).
+
+**Creating a run:**
+- **Refused cases:** `409 PERIOD_NOT_OVER` before the period ends and `409 ATTENDANCE_NOT_FINAL` while days are unfinalised (`details.pending`), unless `force`. Also `409 OUT_OF_ORDER` for a month before an existing run, and `409 RUN_CLOSED` to recompute an approved run.
+- **What a payslip includes:** OT, adjustments for the month, loan EMIs, and approved, unreimbursed expense claims.
+- **Warnings** list transition periods, unfinalised days, employees without a salary (left out), missing bank details, and structure problems.
+
+**Approving and paying:**
+- **Approve** consumes the adjustments and expense claims it pays.
+- **Paid** notifies every employee (`PAYSLIP_READY`) and closes loans that are fully recovered.
+- **Unlock** (admin, audited) returns an APPROVED run to DRAFT and releases what it consumed. A PAID run cannot be unlocked: settle later changes as `ARREARS`.
+
+**Drift:** for an approved or paid run, `drift` lists employees whose paid days or OT changed since the run was computed (`paidDaysThen` / `paidDaysNow`).
+
+Payslip line kinds are `EARNING`, `REIMBURSEMENT`, `DEDUCTION` and `EMPLOYER` (employer PF/ESI, not deducted). Net = earnings + reimbursements − deductions.
+
+### 18.6 Payslips
+```http
+GET /v1/payroll/payslips/mine          (any role) the caller's paid payslips
+GET /v1/employees/:id/payslips         HR/admin: all runs; the employee: paid runs only
+GET /v1/payroll/payslips/:id           lines in rupees
+GET /v1/payroll/payslips/:id/pdf       branded A4 PDF: pay days, LOP, earnings/deductions, net in words, employer contributions
+```
+An employee can open their own payslip only once its run is `PAID`.

@@ -1,5 +1,5 @@
 import { Badge, Button, Callout, CenteredSpinner, DataTable, EmptyState, FileDropzone, IconButton, Modal, PageHeader, SearchInput, toast } from '@iverto-org/core-ui';
-import { Copy, Link2, RefreshCw, ScanFace, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, Link2, RefreshCw, ScanFace, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Crud } from '../components/Crud';
 import { EmployeePicker, FormModal, Panel, Pick, useForm } from '../components/ui';
@@ -16,6 +16,7 @@ export function Terminals() {
   const me = useMe();
   const sites = useSites().data ?? [];
   const [linking, setLinking] = useState<Terminal | null>(null);
+  const rearm = useAction((t: Terminal) => post(`/terminals/${t.id}/rearm`), { invalidate: ['/terminals'], success: 'The terminal can register again' });
   const sync = useAction((t: Terminal) => post(`/terminals/${t.id}/device/sync-enrolment`), { invalidate: ['/terminals'], success: 'Enrolment state checked against the device' });
   return (
     <>
@@ -34,10 +35,13 @@ export function Terminals() {
           { key: 'users', header: 'People', align: 'right', render: (t) => t.mappedUsers },
           { key: 'unknown', header: 'Unknown punches', align: 'right', render: (t) => (t.unknownPunches ? <Badge tone="warning">{t.unknownPunches}</Badge> : '') },
         ]}
-        actions={(t) => t.online && <>
+        actions={(t) => t.online ? <>
           <IconButton label="Waiting to be linked" icon={<Link2 size={16} />} onClick={(e) => { e.stopPropagation(); setLinking(t); }} />
           <IconButton label="Check the device" icon={<RefreshCw size={16} />} onClick={(e) => { e.stopPropagation(); sync.mutate(t); }} />
-        </>}
+        </> : t.registered && me.role === 'ADMIN' && (
+          // Registered terminals cannot register again on their own (serial alone is not a secret).
+          <IconButton label="Allow re-registration (after a factory reset)" icon={<KeyRound size={16} />} onClick={(e) => { e.stopPropagation(); rearm.mutate(t); }} />
+        )}
         fields={[
           { key: 'serialNo', label: 'Serial number', required: true, hint: 'From the device’s About screen', when: (f) => !f.id },
           { key: 'siteId', label: 'Site', type: 'select', required: true, options: sites.map((s) => ({ value: s.id, label: `${s.name} (${s.timezone})` })) },
