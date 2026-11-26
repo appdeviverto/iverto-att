@@ -27,7 +27,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "finalizedAt": {
-            "description": "Set when the day closes; it can still change after (corrections)",
+            "description": "The time when the day closed. A closed day can still change after a correction.",
             "format": "date-time",
             "nullable": true,
             "type": "string",
@@ -184,7 +184,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "object": {
-            "description": "The resource type",
+            "description": "The type of the deleted item.",
             "type": "string",
           },
         },
@@ -257,7 +257,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "employeeCode": {
-            "description": "The code HR assigned, shown on terminals and reports",
+            "description": "The employee code from HR. Terminals and reports show this code.",
             "type": "string",
           },
           "employmentType": {
@@ -269,7 +269,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "externalId": {
-            "description": "Your system's id, set by bulk upsert",
+            "description": "The ID of the employee in your system. You set it with POST /employees/bulk.",
             "nullable": true,
             "type": "string",
           },
@@ -277,7 +277,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "id": {
-            "description": "Iverto employee id (stable)",
+            "description": "The Iverto ID of the employee. It does not change.",
             "type": "string",
           },
           "joinedOn": {
@@ -302,7 +302,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "allOf": [
               {
                 "$ref": "#/components/schemas/EmployeePii",
-                "description": "Only for keys with PII access; otherwise null",
+                "description": "Personal data. It has a value only if the key has PII access. Otherwise it is null.",
               },
             ],
             "nullable": true,
@@ -432,11 +432,11 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "data": {
-            "description": "Ids only: fetch the resource for its current state",
+            "description": "IDs only. To get the full item, use the API.",
             "type": "object",
           },
           "id": {
-            "description": "evt_…; also the webhook-id header",
+            "description": "The event ID (evt_…). The webhook-id header has the same value.",
             "type": "string",
           },
           "type": {
@@ -521,7 +521,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "object",
           },
           "result": {
-            "description": "Bulk: { summary, rows }. Report: { format, rowCount, sha256, downloadUrl, urlExpiresAt, expired }",
+            "description": "For a bulk job: summary and rows. For a report job: format, rowCount, sha256, downloadUrl, urlExpiresAt and expired.",
             "nullable": true,
             "type": "object",
           },
@@ -682,7 +682,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "startTime": {
-            "description": "HH:mm, hourly types",
+            "description": "The start time (HH:mm). Only for leave types in hours.",
             "nullable": true,
             "type": "string",
           },
@@ -839,7 +839,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "boolean",
           },
           "siteIds": {
-            "description": "Empty: every site",
+            "description": "The sites that the key can see. An empty list means all sites.",
             "items": {
               "type": "string",
             },
@@ -862,11 +862,11 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
       "Problem": {
         "properties": {
           "code": {
-            "description": "Stable: switch on this",
+            "description": "The error code. It does not change. Use it in your code.",
             "type": "string",
           },
           "errors": {
-            "description": "Details, e.g. field errors",
+            "description": "More data about the error, for example the fields that are not correct.",
             "nullable": true,
           },
           "requestId": {
@@ -899,7 +899,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "direction": {
-            "description": ""unknown" on two-way gates: the attendance engine pairs first in / last out",
+            "description": "A terminal at a two-way gate sends unknown. Iverto then calculates the first in and the last out.",
             "enum": [
               "in",
               "out",
@@ -908,7 +908,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "employeeId": {
-            "description": "null until an unknown terminal user is matched to an employee",
+            "description": "The Iverto ID of the employee. It is null if the terminal does not know the person yet.",
             "nullable": true,
             "type": "string",
           },
@@ -938,7 +938,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "punchedAt": {
-            "description": "When the person punched (the terminal's clock), not when Iverto received it",
+            "description": "The time when the person punched. The terminal clock gives this time.",
             "format": "date-time",
             "type": "string",
           },
@@ -947,12 +947,12 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "receivedAt": {
-            "description": "When Iverto stored it: later than punchedAt for logs a terminal buffered while offline",
+            "description": "The time when Iverto stored the punch. It is later than punchedAt if the terminal was offline.",
             "format": "date-time",
             "type": "string",
           },
           "reviewStatus": {
-            "description": "Mobile punches only",
+            "description": "Only for punches from the mobile app.",
             "enum": [
               "PENDING",
               "APPROVED",
@@ -978,7 +978,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "workDate": {
-            "description": "The attendance day it counts towards; null until computed",
+            "description": "The attendance day of the punch. It is null until Iverto calculates it.",
             "format": "date",
             "nullable": true,
             "type": "string",
@@ -1006,7 +1006,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
       "PunchLocation": {
         "properties": {
           "accuracy": {
-            "description": "metres",
+            "description": "The accuracy of the location, in metres.",
             "nullable": true,
             "type": "number",
           },
@@ -1047,7 +1047,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "type": "string",
           },
           "timezone": {
-            "description": "IANA zone",
+            "description": "The time zone of the site (IANA name).",
             "example": "Asia/Kolkata",
             "type": "string",
           },
@@ -1077,7 +1077,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
     },
   },
   "info": {
-    "description": "Attendance, leave and employee data for payroll, ERP, HR and access-control integrations. Server-to-server only.",
+    "description": "Connect your payroll, ERP, HR or access-control system to Iverto Attend. Use the API only from a server.",
     "title": "Iverto Attend API",
     "version": "2026-12-01",
   },
@@ -1085,11 +1085,13 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
   "paths": {
     "/attendance-days": {
       "get": {
-        "description": "Permission: \`attendance:read\` (Read attendance days). Cost: 1 unit.",
+        "description": "Permission: \`attendance:read\` (Read attendance days).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "attendance_days.list",
         "parameters": [
           {
-            "description": undefined,
+            "description": "The number of items on one page.",
             "in": "query",
             "name": "limit",
             "schema": {
@@ -1100,7 +1102,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "nextCursor of the previous page",
+            "description": "The nextCursor value from the previous page.",
             "in": "query",
             "name": "cursor",
             "schema": {
@@ -1108,7 +1110,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "description": "Get only the items that changed at or after this time. Deleted items come back with deleted: true.",
             "in": "query",
             "name": "updatedSince",
             "schema": {
@@ -1133,7 +1135,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": undefined,
+            "description": "The first day.",
             "in": "query",
             "name": "from",
             "schema": {
@@ -1142,7 +1144,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Inclusive; at most 93 days after from",
+            "description": "The last day. It is included. It is 93 days or fewer after from.",
             "in": "query",
             "name": "to",
             "schema": {
@@ -1151,7 +1153,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -1159,7 +1161,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -1190,7 +1192,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -1214,7 +1216,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -1224,7 +1226,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -1234,7 +1236,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List attendance days",
@@ -1247,11 +1249,13 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
     },
     "/departments": {
       "get": {
-        "description": "Permission: \`org:read\` (Read sites and departments). Cost: 1 unit.",
+        "description": "Permission: \`org:read\` (Read sites and departments).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "departments.list",
         "parameters": [
           {
-            "description": undefined,
+            "description": "The number of items on one page.",
             "in": "query",
             "name": "limit",
             "schema": {
@@ -1262,7 +1266,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "nextCursor of the previous page",
+            "description": "The nextCursor value from the previous page.",
             "in": "query",
             "name": "cursor",
             "schema": {
@@ -1270,7 +1274,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "description": "Get only the items that changed at or after this time. Deleted items come back with deleted: true.",
             "in": "query",
             "name": "updatedSince",
             "schema": {
@@ -1279,7 +1283,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -1287,7 +1291,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -1318,7 +1322,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -1342,7 +1346,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -1352,7 +1356,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -1362,7 +1366,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List departments",
@@ -1375,11 +1379,13 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
     },
     "/employees": {
       "get": {
-        "description": "Permission: \`employees:read\` (Read employees). Cost: 1 unit.",
+        "description": "Permission: \`employees:read\` (Read employees).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "employees.list",
         "parameters": [
           {
-            "description": undefined,
+            "description": "The number of items on one page.",
             "in": "query",
             "name": "limit",
             "schema": {
@@ -1390,7 +1396,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "nextCursor of the previous page",
+            "description": "The nextCursor value from the previous page.",
             "in": "query",
             "name": "cursor",
             "schema": {
@@ -1398,7 +1404,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "description": "Get only the items that changed at or after this time. Deleted items come back with deleted: true.",
             "in": "query",
             "name": "updatedSince",
             "schema": {
@@ -1451,7 +1457,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -1459,7 +1465,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -1490,7 +1496,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -1514,7 +1520,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -1524,7 +1530,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -1534,7 +1540,7 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List employees",
@@ -1547,13 +1553,15 @@ exports[`OpenAPI document matches the committed contract snapshot (a diff here i
     },
     "/employees/bulk": {
       "post": {
-        "description": "Matches by \`employeeCode\`, or by \`externalId\` when the code is left out. Validated like the CSV import in the web app. Poll the job or subscribe to \`job.completed\`.
+        "description": "Iverto finds each record by \`employeeCode\`. If the record has no code, Iverto uses \`externalId\`. Iverto checks the values with the same rules as the CSV import in the web app. To get the result, send \`GET /jobs/{id}\` or use the \`job.completed\` webhook.
 
-Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 units.",
+Permission: \`employees:write\` (Create and update employees in bulk).
+
+Cost: 10 units of your rate limit.",
         "operationId": "employees.bulk_upsert",
         "parameters": [
           {
-            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "description": "A unique value for each new action. If you send the request again with the same key and body, you get the first response.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -1563,7 +1571,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -1571,7 +1579,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -1585,7 +1593,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
               "schema": {
                 "properties": {
                   "onInvalid": {
-                    "description": "skip (default): apply the valid records. reject: write nothing if any record is invalid",
+                    "description": "skip (default): Iverto saves the correct records. reject: if one record is incorrect, Iverto saves no records.",
                     "enum": [
                       "skip",
                       "reject",
@@ -1593,7 +1601,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
                     "type": "string",
                   },
                   "records": {
-                    "description": "Fields: \`employeeCode\`, \`externalId\`, \`fullName\`, \`joinedOn\`, \`siteId\`, \`departmentId\`, \`managerEmployeeCode\`, \`designation\`, \`employmentType\`, \`mobilePunch\`, \`email\`, \`phone\`, \`probationEndOn\`, \`confirmedOn\`, \`noticePeriodDays\`; with PII access also date of birth, gender, addresses, emergency contact, \`pan\`, \`aadhaarLast4\`, \`uan\`, \`esicNumber\` and bank fields. A field left out is kept; \`null\` clears it.",
+                    "description": "The employee records. Fields: \`employeeCode\`, \`externalId\`, \`fullName\`, \`joinedOn\`, \`siteId\`, \`departmentId\`, \`managerEmployeeCode\`, \`designation\`, \`employmentType\`, \`mobilePunch\`, \`email\`, \`phone\`, \`probationEndOn\`, \`confirmedOn\`, \`noticePeriodDays\`. With PII access, you can also send date of birth, gender, addresses, emergency contact, \`pan\`, \`aadhaarLast4\`, \`uan\`, \`esicNumber\` and bank fields. If you do not send a field, Iverto keeps the current value. If you send \`null\`, Iverto removes the value.",
                     "items": {
                       "additionalProperties": true,
                       "type": "object",
@@ -1603,7 +1611,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
                     "type": "array",
                   },
                   "validateOnly": {
-                    "description": "Report what would happen; write nothing",
+                    "description": "If true, Iverto checks the records and tells you the result. It does not change data.",
                     "type": "boolean",
                   },
                 },
@@ -1625,7 +1633,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
                 },
               },
             },
-            "description": "Accepted: a job",
+            "description": "Accepted. The response is a job.",
           },
           "4XX": {
             "content": {
@@ -1635,7 +1643,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -1645,10 +1653,10 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
-        "summary": "Create or update up to 1,000 employees (async job)",
+        "summary": "Create or update employees in bulk (job)",
         "tags": [
           "Employees",
         ],
@@ -1658,7 +1666,9 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
     },
     "/employees/{id}": {
       "get": {
-        "description": "Permission: \`employees:read\` (Read employees). Cost: 1 unit.",
+        "description": "Permission: \`employees:read\` (Read employees).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "employees.get",
         "parameters": [
           {
@@ -1670,7 +1680,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -1678,7 +1688,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -1698,7 +1708,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -1708,7 +1718,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -1718,7 +1728,7 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "Get an employee",
@@ -1731,9 +1741,11 @@ Permission: \`employees:write\` (Create and update employees in bulk). Cost: 10 
     },
     "/events": {
       "get": {
-        "description": "What webhooks deliver, for consumers that poll or missed deliveries. Kept 30 days; only event types the key's permissions cover.
+        "description": "Gives the same events as the webhooks. Use it if you cannot receive webhooks, or if you did not receive some events. Iverto keeps events for 30 days. You get only the event types that your key has permission for.
 
-Any valid key. Cost: 0 units.",
+Permission: none. Each valid key can use it.
+
+Cost: 0 units of your rate limit.",
         "operationId": "events.list",
         "parameters": [
           {
@@ -1757,7 +1769,7 @@ Any valid key. Cost: 0 units.",
             },
           },
           {
-            "description": "Start when there is no cursor",
+            "description": "The start time, if you have no cursor.",
             "in": "query",
             "name": "since",
             "schema": {
@@ -1784,7 +1796,7 @@ Any valid key. Cost: 0 units.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -1792,7 +1804,7 @@ Any valid key. Cost: 0 units.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -1816,7 +1828,7 @@ Any valid key. Cost: 0 units.",
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -1840,7 +1852,7 @@ Any valid key. Cost: 0 units.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -1850,7 +1862,7 @@ Any valid key. Cost: 0 units.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -1860,10 +1872,10 @@ Any valid key. Cost: 0 units.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
-        "summary": "List recent events (last 30 days) the key may read",
+        "summary": "List the events of the last 30 days",
         "tags": [
           "Events",
         ],
@@ -1873,7 +1885,9 @@ Any valid key. Cost: 0 units.",
     },
     "/jobs": {
       "get": {
-        "description": "Any valid key. Cost: 1 unit.",
+        "description": "Permission: none. Each valid key can use it.
+
+Cost: 1 unit of your rate limit.",
         "operationId": "jobs.list",
         "parameters": [
           {
@@ -1897,7 +1911,7 @@ Any valid key. Cost: 0 units.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -1905,7 +1919,7 @@ Any valid key. Cost: 0 units.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -1929,7 +1943,7 @@ Any valid key. Cost: 0 units.",
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -1953,7 +1967,7 @@ Any valid key. Cost: 0 units.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -1963,7 +1977,7 @@ Any valid key. Cost: 0 units.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -1973,10 +1987,10 @@ Any valid key. Cost: 0 units.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
-        "summary": "List jobs the key may see",
+        "summary": "List jobs",
         "tags": [
           "Jobs",
         ],
@@ -1986,9 +2000,11 @@ Any valid key. Cost: 0 units.",
     },
     "/jobs/{id}": {
       "get": {
-        "description": "Report jobs include a download URL valid for 15 minutes, minted on every call.
+        "description": "For a report job, the result has a download link. The link is valid for 15 minutes. Each call gives a new link.
 
-Any valid key. Cost: 1 unit.",
+Permission: none. Each valid key can use it.
+
+Cost: 1 unit of your rate limit.",
         "operationId": "jobs.get",
         "parameters": [
           {
@@ -2000,7 +2016,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2008,7 +2024,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2028,7 +2044,7 @@ Any valid key. Cost: 1 unit.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -2038,7 +2054,7 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2048,10 +2064,10 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
-        "summary": "Get a job (report jobs include a fresh download URL)",
+        "summary": "Get a job",
         "tags": [
           "Jobs",
         ],
@@ -2061,7 +2077,9 @@ Any valid key. Cost: 1 unit.",
     },
     "/leave-balances": {
       "get": {
-        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "leave_balances.list",
         "parameters": [
           {
@@ -2069,7 +2087,7 @@ Any valid key. Cost: 1 unit.",
             "in": "query",
             "name": "year",
             "schema": {
-              "description": "Leave year (starts in April); default: current",
+              "description": "The leave year. A leave year starts in April. The default is the current leave year.",
               "type": "integer",
             },
           },
@@ -2100,7 +2118,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2108,7 +2126,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2132,7 +2150,7 @@ Any valid key. Cost: 1 unit.",
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -2156,7 +2174,7 @@ Any valid key. Cost: 1 unit.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -2166,7 +2184,7 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2176,7 +2194,7 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List leave balances",
@@ -2189,11 +2207,13 @@ Any valid key. Cost: 1 unit.",
     },
     "/leave-requests": {
       "get": {
-        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "leave_requests.list",
         "parameters": [
           {
-            "description": undefined,
+            "description": "The number of items on one page.",
             "in": "query",
             "name": "limit",
             "schema": {
@@ -2204,7 +2224,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "nextCursor of the previous page",
+            "description": "The nextCursor value from the previous page.",
             "in": "query",
             "name": "cursor",
             "schema": {
@@ -2212,7 +2232,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "description": "Get only the items that changed at or after this time. Deleted items come back with deleted: true.",
             "in": "query",
             "name": "updatedSince",
             "schema": {
@@ -2243,7 +2263,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Requests overlapping from…to",
+            "description": "Get requests that include days on or after this date.",
             "in": "query",
             "name": "from",
             "schema": {
@@ -2252,7 +2272,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": undefined,
+            "description": "Get requests that include days on or before this date.",
             "in": "query",
             "name": "to",
             "schema": {
@@ -2261,7 +2281,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2269,7 +2289,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2300,7 +2320,7 @@ Any valid key. Cost: 1 unit.",
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -2324,7 +2344,7 @@ Any valid key. Cost: 1 unit.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -2334,7 +2354,7 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2344,7 +2364,7 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List leave requests",
@@ -2357,7 +2377,9 @@ Any valid key. Cost: 1 unit.",
     },
     "/leave-requests/{id}": {
       "get": {
-        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "leave_requests.get",
         "parameters": [
           {
@@ -2369,7 +2391,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2377,7 +2399,7 @@ Any valid key. Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2397,7 +2419,7 @@ Any valid key. Cost: 1 unit.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -2407,7 +2429,7 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2417,7 +2439,7 @@ Any valid key. Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "Get a leave request",
@@ -2430,9 +2452,11 @@ Any valid key. Cost: 1 unit.",
     },
     "/leave-requests/{id}/approve": {
       "post": {
-        "description": "Counts as a manager approval: types that need HR approval still wait for HR.
+        "description": "Your approval counts as a manager approval. If the leave type also needs HR approval, the request waits for HR.
 
-Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit.",
+Permission: \`leave:approve\` (Approve or reject leave requests).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "leave_requests.approve",
         "parameters": [
           {
@@ -2444,7 +2468,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "description": "A unique value for each new action. If you send the request again with the same key and body, you get the first response.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -2454,7 +2478,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2462,7 +2486,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2506,7 +2530,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2516,7 +2540,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "Approve a leave request",
@@ -2529,7 +2553,9 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
     },
     "/leave-requests/{id}/reject": {
       "post": {
-        "description": "Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit.",
+        "description": "Permission: \`leave:approve\` (Approve or reject leave requests).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "leave_requests.reject",
         "parameters": [
           {
@@ -2541,7 +2567,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "description": "A unique value for each new action. If you send the request again with the same key and body, you get the first response.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -2551,7 +2577,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2559,7 +2585,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2606,7 +2632,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2616,7 +2642,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "Reject a leave request",
@@ -2629,11 +2655,13 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
     },
     "/leave-types": {
       "get": {
-        "description": "Permission: \`leave:read\` (Read leave types, requests and balances). Cost: 1 unit.",
+        "description": "Permission: \`leave:read\` (Read leave types, requests and balances).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "leave_types.list",
         "parameters": [
           {
-            "description": undefined,
+            "description": "The number of items on one page.",
             "in": "query",
             "name": "limit",
             "schema": {
@@ -2644,7 +2672,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "nextCursor of the previous page",
+            "description": "The nextCursor value from the previous page.",
             "in": "query",
             "name": "cursor",
             "schema": {
@@ -2652,7 +2680,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "description": "Get only the items that changed at or after this time. Deleted items come back with deleted: true.",
             "in": "query",
             "name": "updatedSince",
             "schema": {
@@ -2661,7 +2689,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2669,7 +2697,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2700,7 +2728,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -2724,7 +2752,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -2734,7 +2762,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2744,7 +2772,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List leave types",
@@ -2757,11 +2785,13 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
     },
     "/me": {
       "get": {
-        "description": "Any valid key. Cost: 1 unit.",
+        "description": "Permission: none. Each valid key can use it.
+
+Cost: 1 unit of your rate limit.",
         "operationId": "me.get",
         "parameters": [
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2769,7 +2799,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2789,7 +2819,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -2799,7 +2829,7 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2809,10 +2839,10 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
-        "summary": "The calling key, its effective permissions and limits",
+        "summary": "Get the key, its permissions and its limits",
         "tags": [
           "Key",
         ],
@@ -2822,13 +2852,17 @@ Permission: \`leave:approve\` (Approve or reject leave requests). Cost: 1 unit."
     },
     "/punches": {
       "get": {
-        "description": "Historical punches by \`from\`/\`to\` (when people punched). To catch punches a terminal uploads late (it buffers while offline and sends the backlog on reconnect, with the original punch times), sync with \`updatedSince\`/\`cursor\`, which follow when Iverto stored or changed each punch.
+        "description": "Use \`from\` and \`to\` to get the punches of a past period. These filters use the time when the person punched.
 
-Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
+A terminal without a connection stores punches. It sends them later with the original times. To get these late punches, synchronize with \`cursor\` or \`updatedSince\`. These use the time when Iverto stored the punch.
+
+Permission: \`punches:read\` (Read punches).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "punches.list",
         "parameters": [
           {
-            "description": undefined,
+            "description": "The number of items on one page.",
             "in": "query",
             "name": "limit",
             "schema": {
@@ -2839,7 +2873,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "nextCursor of the previous page",
+            "description": "The nextCursor value from the previous page.",
             "in": "query",
             "name": "cursor",
             "schema": {
@@ -2847,7 +2881,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "description": "Get only the items that changed at or after this time. Deleted items come back with deleted: true.",
             "in": "query",
             "name": "updatedSince",
             "schema": {
@@ -2872,7 +2906,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "punchedAt ≥ from",
+            "description": "Get punches with punchedAt at or after this time.",
             "in": "query",
             "name": "from",
             "schema": {
@@ -2881,7 +2915,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "punchedAt < to",
+            "description": "Get punches with punchedAt before this time.",
             "in": "query",
             "name": "to",
             "schema": {
@@ -2890,7 +2924,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -2898,7 +2932,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -2929,7 +2963,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -2953,7 +2987,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -2963,7 +2997,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -2973,7 +3007,7 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List punches",
@@ -2984,13 +3018,15 @@ Permission: \`punches:read\` (Read punches). Cost: 1 unit.",
         "x-permission": "punches:read",
       },
       "post": {
-        "description": "A manual punch (source MANUAL), audited with the key as the actor. Refused in closed payroll periods.
+        "description": "Records one manual punch (source MANUAL). The audit log shows your key as the actor. Iverto refuses punches in a closed payroll period.
 
-Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
+Permission: \`punches:write\` (Record punches).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "punches.create",
         "parameters": [
           {
-            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "description": "A unique value for each new action. If you send the request again with the same key and body, you get the first response.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -3000,7 +3036,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -3008,7 +3044,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -3072,7 +3108,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -3082,7 +3118,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "Record a punch",
@@ -3095,11 +3131,13 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "/reports": {
       "post": {
-        "description": "Permission: \`reports:generate\` (Generate attendance reports (CSV / PDF)). Cost: 25 units.",
+        "description": "Permission: \`reports:generate\` (Generate attendance reports (CSV / PDF)).
+
+Cost: 25 units of your rate limit.",
         "operationId": "reports.create",
         "parameters": [
           {
-            "description": "Unique per logical write; a retry with the same key and body returns the first response",
+            "description": "A unique value for each new action. If you send the request again with the same key and body, you get the first response.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -3109,7 +3147,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -3117,7 +3155,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -3215,7 +3253,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Accepted: a job",
+            "description": "Accepted. The response is a job.",
           },
           "4XX": {
             "content": {
@@ -3225,7 +3263,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -3235,10 +3273,10 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
-        "summary": "Generate a report file (async job)",
+        "summary": "Make a report file (job)",
         "tags": [
           "Jobs",
         ],
@@ -3248,11 +3286,13 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "/sites": {
       "get": {
-        "description": "Permission: \`org:read\` (Read sites and departments). Cost: 1 unit.",
+        "description": "Permission: \`org:read\` (Read sites and departments).
+
+Cost: 1 unit of your rate limit.",
         "operationId": "sites.list",
         "parameters": [
           {
-            "description": undefined,
+            "description": "The number of items on one page.",
             "in": "query",
             "name": "limit",
             "schema": {
@@ -3263,7 +3303,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "nextCursor of the previous page",
+            "description": "The nextCursor value from the previous page.",
             "in": "query",
             "name": "cursor",
             "schema": {
@@ -3271,7 +3311,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Incremental sync: rows changed at or after this instant, plus deletions (as \`deleted: true\` items)",
+            "description": "Get only the items that changed at or after this time. Deleted items come back with deleted: true.",
             "in": "query",
             "name": "updatedSince",
             "schema": {
@@ -3280,7 +3320,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): unix seconds",
+            "description": "Optional. For request signing: the current time in Unix seconds.",
             "in": "header",
             "name": "Iverto-Timestamp",
             "schema": {
@@ -3288,7 +3328,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             },
           },
           {
-            "description": "Request signing (optional): base64 Ed25519 signature",
+            "description": "Optional. For request signing: the Ed25519 signature in base64.",
             "in": "header",
             "name": "Iverto-Signature",
             "schema": {
@@ -3319,7 +3359,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                       "type": "boolean",
                     },
                     "nextCursor": {
-                      "description": "Pass as \`cursor\`. Keep the last one: it resumes the sync later",
+                      "description": "Send this value as cursor to get the next page. Keep the last value for the next synchronization.",
                       "nullable": true,
                       "type": "string",
                     },
@@ -3343,7 +3383,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
             "description": "OK",
           },
           "304": {
-            "description": "Not modified (If-None-Match); costs nothing",
+            "description": "Not modified. Nothing changed since the ETag that you sent in If-None-Match. It costs nothing.",
           },
           "4XX": {
             "content": {
@@ -3353,7 +3393,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Error (problem+json)",
+            "description": "Error in the request. See the code field.",
           },
           "5XX": {
             "content": {
@@ -3363,7 +3403,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
                 },
               },
             },
-            "description": "Server error (problem+json)",
+            "description": "Error on the server. Try again later.",
           },
         },
         "summary": "List sites",
@@ -3382,47 +3422,47 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
   ],
   "servers": [
     {
-      "url": "https://api.iverto.ai/v1",
+      "url": "https://ivertovm.indiasouthcentral.cloudapp.azure.com/att/v1/public",
     },
   ],
   "tags": [
     {
-      "description": "The calling key",
+      "description": "Information about the API key that sends the request.",
       "name": "Key",
     },
     {
-      "description": "Sites and departments",
+      "description": "The sites and departments of your organisation.",
       "name": "Organisation",
     },
     {
-      "description": "The employee directory",
+      "description": "The employees of your organisation.",
       "name": "Employees",
     },
     {
-      "description": "Raw punches from terminals, mobile, corrections and manual entry",
+      "description": "Punches from terminals, the mobile app, corrections and manual entry.",
       "name": "Punches",
     },
     {
-      "description": "Computed attendance days",
+      "description": "The attendance of each employee for each day, as Iverto calculates it.",
       "name": "Attendance",
     },
     {
-      "description": "Leave types, requests and balances",
+      "description": "Leave types, leave requests and leave balances.",
       "name": "Leave",
     },
     {
-      "description": "The event log behind webhooks",
+      "description": "The list of events that the webhooks send.",
       "name": "Events",
     },
     {
-      "description": "Bulk writes and reports, run in the background",
+      "description": "Bulk updates and reports. They run in the background.",
       "name": "Jobs",
     },
   ],
   "x-webhooks": {
     "api.alert": {
       "post": {
-        "description": "A usage alert is raised (rate limits, quota, credits, key expiry or disablement, error spike).  Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "Iverto finds a usage problem, for example a rate limit, an expiring key or many errors. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3434,7 +3474,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "api.alert",
@@ -3442,7 +3482,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "attendance.day.finalized": {
       "post": {
-        "description": "An employee's day closes. Needs \`attendance:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "The day of an employee closes. Your organisation needs the \`attendance:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3454,7 +3494,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "attendance.day.finalized",
@@ -3462,7 +3502,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "attendance.day.updated": {
       "post": {
-        "description": "A closed day changes (correction, recompute). Needs \`attendance:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "A closed day changes, for example after a correction. Your organisation needs the \`attendance:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3474,7 +3514,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "attendance.day.updated",
@@ -3482,7 +3522,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "employee.created": {
       "post": {
-        "description": "An employee is added. Needs \`employees:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "Someone adds an employee. Your organisation needs the \`employees:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3494,7 +3534,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "employee.created",
@@ -3502,7 +3542,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "employee.exited": {
       "post": {
-        "description": "An employee is marked as exited. Needs \`employees:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "An employee leaves the organisation. Your organisation needs the \`employees:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3514,7 +3554,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "employee.exited",
@@ -3522,7 +3562,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "employee.updated": {
       "post": {
-        "description": "An employee's record changes. Needs \`employees:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "The data of an employee changes. Your organisation needs the \`employees:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3534,7 +3574,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "employee.updated",
@@ -3542,7 +3582,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "job.completed": {
       "post": {
-        "description": "A bulk or report job finishes.  Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "A bulk job or a report job finishes. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3554,7 +3594,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "job.completed",
@@ -3562,7 +3602,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "leave.request.created": {
       "post": {
-        "description": "A leave request is submitted. Needs \`leave:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "An employee requests leave. Your organisation needs the \`leave:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3574,7 +3614,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "leave.request.created",
@@ -3582,7 +3622,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "leave.request.decided": {
       "post": {
-        "description": "A leave request is approved, rejected or cancelled. Needs \`leave:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "Someone approves, rejects or cancels a leave request. Your organisation needs the \`leave:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3594,7 +3634,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "leave.request.decided",
@@ -3602,7 +3642,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
     },
     "punch.created": {
       "post": {
-        "description": "A punch is recorded (terminal, mobile, web or API). Needs \`punches:read\`. Signed with Standard Webhooks headers (webhook-id, webhook-timestamp, webhook-signature).",
+        "description": "Iverto stores a punch from a terminal, the mobile app, the web app or the API. Your organisation needs the \`punches:read\` permission. Iverto signs the request with the headers webhook-id, webhook-timestamp and webhook-signature.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3614,7 +3654,7 @@ Permission: \`punches:write\` (Record punches). Cost: 1 unit.",
         },
         "responses": {
           "200": {
-            "description": "Any 2xx acknowledges the delivery; anything else is retried",
+            "description": "Reply with any 2xx status. For other replies, Iverto sends the event again.",
           },
         },
         "summary": "punch.created",

@@ -103,7 +103,7 @@ function assertRange(from?: string, to?: string) {
 const day = (ymd: string) => new Date(`${ymd}T00:00:00Z`);
 
 /**
- * https://api.iverto.ai/v1/* (app path /v1/public/*). Thin: scoping comes from ScopeService
+ * Public base URL https://ivertovm.indiasouthcentral.cloudapp.azure.com/att/v1/public (app path /v1/public/*). Thin: scoping comes from ScopeService
  * and RLS, permissions from the registry via ApiKeyGuard, shapes from serializers.ts.
  */
 @ApiExcludeController()

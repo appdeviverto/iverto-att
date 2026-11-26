@@ -40,7 +40,7 @@ export type PermissionId = keyof typeof PERMISSIONS;
 export interface Operation {
   id: string;
   method: HttpMethod;
-  /** Public path (after https://api.iverto.ai/v1). */
+  /** Public path (after the base URL https://ivertovm.indiasouthcentral.cloudapp.azure.com/att/v1/public). */
   path: string;
   /** null: any valid key (introspection). */
   permission: PermissionId | null;
@@ -60,7 +60,7 @@ const op = (id: string, method: HttpMethod, path: string, permission: Permission
 });
 
 export const OPERATIONS: readonly Operation[] = [
-  op('me.get', 'GET', '/me', null, 'The calling key, its effective permissions and limits'),
+  op('me.get', 'GET', '/me', null, 'Get the key, its permissions and its limits'),
   op('sites.list', 'GET', '/sites', 'org:read', 'List sites'),
   op('departments.list', 'GET', '/departments', 'org:read', 'List departments'),
   op('employees.list', 'GET', '/employees', 'employees:read', 'List employees'),
@@ -74,11 +74,11 @@ export const OPERATIONS: readonly Operation[] = [
   op('leave_requests.approve', 'POST', '/leave-requests/:id/approve', 'leave:approve', 'Approve a leave request'),
   op('leave_requests.reject', 'POST', '/leave-requests/:id/reject', 'leave:approve', 'Reject a leave request'),
   op('leave_balances.list', 'GET', '/leave-balances', 'leave:read', 'List leave balances'),
-  op('events.list', 'GET', '/events', null, 'List recent events (last 30 days) the key may read', 0),
-  op('employees.bulk_upsert', 'POST', '/employees/bulk', 'employees:write', 'Create or update up to 1,000 employees (async job)', 10),
-  op('reports.create', 'POST', '/reports', 'reports:generate', 'Generate a report file (async job)', 25),
-  op('jobs.list', 'GET', '/jobs', null, 'List jobs the key may see'),
-  op('jobs.get', 'GET', '/jobs/:id', null, 'Get a job (report jobs include a fresh download URL)'),
+  op('events.list', 'GET', '/events', null, 'List the events of the last 30 days', 0),
+  op('employees.bulk_upsert', 'POST', '/employees/bulk', 'employees:write', 'Create or update employees in bulk (job)', 10),
+  op('reports.create', 'POST', '/reports', 'reports:generate', 'Make a report file (job)', 25),
+  op('jobs.list', 'GET', '/jobs', null, 'List jobs'),
+  op('jobs.get', 'GET', '/jobs/:id', null, 'Get a job'),
 ];
 
 /** Built-in report types exposed publicly (reports/definitions.ts); tenant-built templates are not. */
@@ -99,18 +99,18 @@ export type JobType = keyof typeof JOB_TYPES;
  * endpoint needs it allowed by the org policy; a key reading GET /events needs it on the key.
  */
 export const EVENTS = {
-  'punch.created': { permission: 'punches:read', label: 'A punch is recorded (terminal, mobile, web or API)' },
-  'attendance.day.finalized': { permission: 'attendance:read', label: "An employee's day closes" },
-  'attendance.day.updated': { permission: 'attendance:read', label: 'A closed day changes (correction, recompute)' },
-  'leave.request.created': { permission: 'leave:read', label: 'A leave request is submitted' },
-  'leave.request.decided': { permission: 'leave:read', label: 'A leave request is approved, rejected or cancelled' },
-  'employee.created': { permission: 'employees:read', label: 'An employee is added' },
-  'employee.updated': { permission: 'employees:read', label: "An employee's record changes" },
-  'employee.exited': { permission: 'employees:read', label: 'An employee is marked as exited' },
+  'punch.created': { permission: 'punches:read', label: 'Iverto stores a punch from a terminal, the mobile app, the web app or the API' },
+  'attendance.day.finalized': { permission: 'attendance:read', label: 'The day of an employee closes' },
+  'attendance.day.updated': { permission: 'attendance:read', label: 'A closed day changes, for example after a correction' },
+  'leave.request.created': { permission: 'leave:read', label: 'An employee requests leave' },
+  'leave.request.decided': { permission: 'leave:read', label: 'Someone approves, rejects or cancels a leave request' },
+  'employee.created': { permission: 'employees:read', label: 'Someone adds an employee' },
+  'employee.updated': { permission: 'employees:read', label: 'The data of an employee changes' },
+  'employee.exited': { permission: 'employees:read', label: 'An employee leaves the organisation' },
   // Ids only; any key may receive it (the job itself is visible only with its type's permission).
-  'job.completed': { permission: null, label: 'A bulk or report job finishes' },
+  'job.completed': { permission: null, label: 'A bulk job or a report job finishes' },
   // Usage alert raised for the org (§15): data.type, data.level, data.message, data.apiKeyId.
-  'api.alert': { permission: null, label: 'A usage alert is raised (rate limits, quota, credits, key expiry or disablement, error spike)' },
+  'api.alert': { permission: null, label: 'Iverto finds a usage problem, for example a rate limit, an expiring key or many errors' },
 } as const satisfies Record<string, { permission: PermissionId | null; label: string }>;
 export type EventType = keyof typeof EVENTS;
 export const isEventType = (t: string): t is EventType => Object.prototype.hasOwnProperty.call(EVENTS, t);

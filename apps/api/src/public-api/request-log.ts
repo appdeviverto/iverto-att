@@ -30,7 +30,7 @@ export interface LogEntry {
   createdAt: string;
 }
 
-/** `/v1/public/...` — the app-side prefix of https://api.iverto.ai/v1/... */
+/** `/v1/public/...`: the app path of the public API (public base URL: …/att/v1/public). */
 export const isPublicApiUrl = (url: string) => url.startsWith(`/${process.env.API_PREFIX || 'v1'}/public/`);
 
 /**

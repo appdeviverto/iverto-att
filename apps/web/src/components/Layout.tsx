@@ -117,6 +117,7 @@ export function Layout() {
             ]
           : []),
         { label: 'Reports', hint: 'Exports & schedules', icon: icon(BarChart3), href: '/reports' },
+        ...(me.role === 'ADMIN' ? [{ label: 'API & integrations', hint: 'Keys, webhooks, API docs', icon: icon(Code2), href: '/settings/api' }] : []),
         { label: 'Settings', icon: icon(Settings), href: '/settings' },
       ],
     },
