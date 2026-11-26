@@ -54,7 +54,7 @@ function RequireAuth() {
   );
 }
 
-/** Redoc is big: its own chunk, loaded only when someone opens the API reference. */
+/** The API reference (Scalar) is big: its own chunk, loaded only when someone opens the API reference. */
 const Developers = lazy(() => import('./pages/Developers'));
 const developers = <Suspense fallback={<CenteredSpinner />}><Developers /></Suspense>;
 

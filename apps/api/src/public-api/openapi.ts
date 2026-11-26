@@ -4,7 +4,7 @@ import { CURRENT_API_VERSION, EVENTS, JOB_TYPES, OPERATIONS, Operation, PERMISSI
  * The public OpenAPI 3.0 document (docs/public-api.md §14), built from the registry: paths,
  * methods, permissions and costs come from OPERATIONS, so a new operation without docs fails
  * public-api.spec.ts, and serializer fields are checked against these schemas there too.
- * Served to org admins and superadmins only; rendered in the web app with Redoc. The prose
+ * Served to org admins and superadmins only; rendered in the web app with Scalar. The prose
  * guides (auth, sync, webhooks, signing) come from docs/public-api-reference.md.
  */
 
@@ -111,7 +111,7 @@ export const OPERATION_DOCS: Record<string, OpDoc> = {
     status: 202,
     body: obj(
       {
-        records: { type: 'array', minItems: 1, maxItems: 5000, items: { type: 'object', additionalProperties: true }, description: BULK_FIELDS },
+        records: { type: 'array', minItems: 1, maxItems: 5000, items: { type: 'object', additionalProperties: true, example: { employeeCode: 'E1001', fullName: 'Asha Rao', joinedOn: '2026-04-01', siteId: 'SITE_ID', designation: 'Technician' } }, description: BULK_FIELDS },
         validateOnly: bool('If true, Iverto checks the records and tells you the result. It does not change data.'),
         onInvalid: oneOf(['skip', 'reject'], 'skip (default): Iverto saves the correct records. reject: if one record is incorrect, Iverto saves no records.'),
       },
@@ -187,7 +187,7 @@ function operation(op: Operation) {
   const doc = OPERATION_DOCS[op.id];
   const pathParams = [...op.path.matchAll(/:(\w+)/g)].map((m): Param => ({ name: m[1], in: 'path', required: true, schema: str() }));
   const headers = [
-    ...(op.method === 'POST' ? [{ name: 'Idempotency-Key', in: 'header', required: true, schema: str(undefined, { maxLength: 200 }), description: 'A unique value for each new action. If you send the request again with the same key and body, you get the first response.' }] : []),
+    ...(op.method === 'POST' ? [{ name: 'Idempotency-Key', in: 'header', required: true, schema: str(undefined, { maxLength: 200, example: 'a3f1c2e4-5b6d-4e7f-8a9b-0c1d2e3f4a5b' }), description: 'A unique value for each new action. If you send the request again with the same key and body, you get the first response.' }] : []),
     { name: 'Iverto-Timestamp', in: 'header', schema: str(), description: 'Optional. For request signing: the current time in Unix seconds.' },
     { name: 'Iverto-Signature', in: 'header', schema: str(), description: 'Optional. For request signing: the Ed25519 signature in base64.' },
   ];
